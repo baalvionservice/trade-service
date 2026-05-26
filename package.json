@@ -1,0 +1,30 @@
+{
+  "name": "trade-service",
+  "version": "1.0.0",
+  "description": "Baalvion Global Trade Infrastructure backend service",
+  "license": "ISC",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.0.0",
+    "express": "^5.2.1",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "pg": "^8.13.0",
+    "pg-hstore": "^2.3.4",
+    "prom-client": "^15.1.0",
+    "sequelize": "^6.37.0",
+    "uuid": "^11.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
