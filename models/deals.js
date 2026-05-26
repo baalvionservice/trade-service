@@ -16,6 +16,7 @@ module.exports = (sequelize, DataTypes) => {
         origin: { type: DataTypes.STRING(255) },
         destination: { type: DataTypes.STRING(255) },
         payment_terms: { type: DataTypes.STRING(255) },
+        last_message: { type: DataTypes.TEXT },
         status: {
             type: DataTypes.ENUM('draft', 'negotiation', 'finalized', 'committed', 'cancelled'),
             defaultValue: 'draft',
