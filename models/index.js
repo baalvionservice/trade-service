@@ -31,6 +31,7 @@ db.Dispute         = require('./disputes')(sequelize, Sequelize.DataTypes);
 db.Wallet          = require('./wallets')(sequelize, Sequelize.DataTypes);
 db.Notification    = require('./notifications')(sequelize, Sequelize.DataTypes);
 db.Listing         = require('./listings')(sequelize, Sequelize.DataTypes);
+db.Quotation       = require('./quotations')(sequelize, Sequelize.DataTypes);
 
 Object.values(db).forEach(model => {
     if (model && model.associate) model.associate(db);

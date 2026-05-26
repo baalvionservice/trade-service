@@ -6,6 +6,7 @@ router.use('/organizations', require('./organizationRoutes'));
 router.use('/companies',     require('./organizationRoutes'));
 router.use('/marketplace_listings', require('./listingRoutes'));
 router.use('/rfqs',          require('./rfqRoutes'));
+router.use('/quotations',    require('./quotationRoutes'));
 router.use('/deals',         require('./dealRoutes'));
 router.use('/orders',        require('./orderRoutes'));
 router.use('/escrows',       require('./escrowRoutes'));
