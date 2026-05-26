@@ -5,6 +5,8 @@ const { AppError } = require('../utils/errors');
 
 // Reserved query keys that control paging/sorting rather than filtering.
 const CONTROL_KEYS = new Set(['page', 'limit', 'sortBy', 'order', 'sort', 'offset']);
+// Free-text search keys: substring (contains) match across the document.
+const SEARCH_KEYS = ['search', 'q', 'query'];
 
 // Flatten a stored row into the document shape the frontend expects:
 // the JSONB payload at top level + id/timestamps injected.
@@ -25,10 +27,21 @@ const listDocs = async (req, res, next) => {
         });
         let docs = rows.map(flatten);
 
-        // Apply simple equality filters for any non-control query param.
+        // Equality filters for any non-control, non-search query param.
         for (const [k, v] of Object.entries(req.query)) {
-            if (CONTROL_KEYS.has(k) || v === undefined || v === '') continue;
+            if (CONTROL_KEYS.has(k) || SEARCH_KEYS.includes(k) || v === undefined || v === '') continue;
             docs = docs.filter((d) => String(d[k]) === String(v));
+        }
+
+        // Free-text search: case-insensitive substring across top-level scalar values.
+        const term = (SEARCH_KEYS.map((k) => req.query[k]).find(Boolean) || '').toString().trim().toLowerCase();
+        if (term) {
+            docs = docs.filter((d) =>
+                Object.values(d).some(
+                    (val) => (typeof val === 'string' || typeof val === 'number')
+                        && String(val).toLowerCase().includes(term),
+                ),
+            );
         }
 
         // Arrays go directly under `data` (the long-tail services read res.data || []).

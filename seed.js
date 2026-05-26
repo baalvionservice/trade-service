@@ -120,6 +120,13 @@ const COLLECTIONS = {
     iot_devices: [
         { associatedEntityId: '1', name: 'Tactical Multisensor Alpha', type: 'multisensor', status: 'active', batteryLevel: 94, lastSignal: iso(0) },
     ],
+    // Searched via the store's free-text query (?search=) — e.g. '8541' or 'solar'.
+    hs_codes: [
+        { code: '8541.43', description: 'Photovoltaic cells assembled in modules (solar panels)', category: 'Energy & Solar', dutyRate: 0 },
+        { code: '7403.11', description: 'Refined copper cathodes', category: 'Industrial & Metals', dutyRate: 0 },
+        { code: '8507.60', description: 'Lithium-ion accumulators (batteries)', category: 'Energy Storage', dutyRate: 3.4 },
+        { code: '8471.30', description: 'Portable automatic data-processing machines', category: 'Electronics', dutyRate: 0 },
+    ],
 };
 
 (async () => {
