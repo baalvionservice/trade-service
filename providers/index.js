@@ -49,7 +49,8 @@ async function healthAll() {
     const others = REGISTRY.filter((e) => e.key).map((e) => ({
         name: e.name, mode: mode(e), healthy: mode(e) === 'live', note: e.note,
     }));
-    return { generatedAt: new Date().toISOString(), providers: [live, ...others] };
+    const cache = require('../cache'); // eslint-disable-line global-require
+    return { generatedAt: new Date().toISOString(), cache: cache.health(), providers: [live, ...others] };
 }
 
 module.exports = { fx, validateEnv, logEnvReport, healthAll, REGISTRY };
