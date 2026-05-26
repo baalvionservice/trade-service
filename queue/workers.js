@@ -50,6 +50,12 @@ const PROCESSORS = {
         return rate;
     },
 
+    ws_fanout: async (job) => {
+        const { room, event, data } = job.data || {};
+        await require('../realtime').publish(room, event, data);
+        return { fanned: room };
+    },
+
     webhook_delivery: async (job) => {
         const { url, payload, secret } = job.data || {};
         assertPublicHttps(url);

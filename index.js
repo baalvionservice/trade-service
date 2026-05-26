@@ -69,6 +69,7 @@ const start = async () => {
         console.error('[trade-service] DB connection failed:', err.message);
         process.exit(1);
     }
+    require('./realtime').initRealtime(server); // attach WebSocket server at /ws
     server.listen(config.port, () => console.log(`[trade-service] running on port ${config.port}`));
 };
 

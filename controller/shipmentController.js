@@ -84,6 +84,8 @@ const updateShipmentStatus = async (req, res, next) => {
         const { status } = req.body;
         if (!status) return next(new AppError('BAD_REQUEST', 'status is required', 400));
         await shipment.update({ status });
+        // Realtime push to the shipment + tenant rooms (best-effort).
+        require('../realtime').publish(`shipment:${shipment.id}`, 'status', { id: shipment.id, status }).catch(() => {});
         return sendSuccess(req, res, shipment);
     } catch (err) {
         return next(err);

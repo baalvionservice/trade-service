@@ -6,7 +6,8 @@ const { sendSuccess } = require('../utils/response');
 const health = async (req, res, next) => {
     try {
         const queues = await queue.health();
-        return sendSuccess(req, res, { queues, workers: workerMetrics() });
+        const realtime = require('../realtime').health();
+        return sendSuccess(req, res, { queues, workers: workerMetrics(), realtime });
     } catch (err) { return next(err); }
 };
 

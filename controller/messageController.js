@@ -32,6 +32,8 @@ const createMessage = async (req, res, next) => {
     try {
         await assertRoomAccess(req, req.body && req.body.dealId); // participant gate
         const message = await db.Message.create(req.body);
+        // Realtime push to the deal room (best-effort, non-blocking).
+        require('../realtime').publish(`deal:${message.dealId}`, 'message', message).catch(() => {});
         return sendSuccess(req, res, message, 201);
     } catch (err) {
         return next(err);
