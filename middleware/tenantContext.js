@@ -14,7 +14,7 @@ const jwtserver = require('../utils/jwtserver');
 const als = new AsyncLocalStorage();
 
 function tenantContext(req, res, next) {
-    const ctx = { tenantId: null, role: null, userId: null, bypass: false };
+    const ctx = { tenantId: null, role: null, userId: null, orgCode: null, bypass: false };
     const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
     if (token) {
         try {
@@ -22,6 +22,7 @@ function tenantContext(req, res, next) {
             ctx.tenantId = decoded.tenantId || null;
             ctx.role = decoded.role || null;
             ctx.userId = decoded.id;
+            ctx.orgCode = decoded.orgCode || null;
             ctx.bypass = decoded.role === 'admin';
         } catch { /* invalid token → anonymous (no scoping); protected routes still 401 in authMiddleware */ }
     }

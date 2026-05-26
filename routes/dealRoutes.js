@@ -5,8 +5,8 @@ const {
     listDeals, getDeal, createDeal, updateDeal, finalizeDeal, commitDeal,
 } = require('../controller/dealController');
 
-router.get('/',                listDeals);
-router.get('/:id',             getDeal);
+router.get('/',                authMiddleware, listDeals);
+router.get('/:id',             authMiddleware, getDeal);
 router.post('/',               authMiddleware, createDeal);
 router.put('/:id',             authMiddleware, updateDeal);
 router.patch('/:id',           authMiddleware, updateDeal);

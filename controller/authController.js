@@ -11,7 +11,7 @@ const { AppError } = require('../utils/errors');
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
 const tokenFor = (user) => signAccessToken(
-    { id: user.id, email: user.email, role: user.role, tenantId: user.tenant_id },
+    { id: user.id, email: user.email, role: user.role, tenantId: user.tenant_id, orgCode: user.org_code || null },
     '24h',
 );
 

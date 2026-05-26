@@ -5,8 +5,8 @@ const {
     listQuotations, getQuotation, createQuotation, updateQuotation,
 } = require('../controller/quotationController');
 
-router.get('/',      listQuotations);
-router.get('/:id',   getQuotation);
+router.get('/',      authMiddleware, listQuotations);
+router.get('/:id',   authMiddleware, getQuotation);
 router.post('/',     authMiddleware, createQuotation);
 router.patch('/:id', authMiddleware, updateQuotation);
 
