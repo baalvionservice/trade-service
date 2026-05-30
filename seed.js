@@ -148,6 +148,20 @@ const COLLECTIONS = {
         { finance_id: 'FIN-7741', companyId: 'COMP-102', invoiceId: 'INV-9001', amount: 420000, currency: 'USD', advanceRate: 0.85, status: 'ACTIVE', feeRate: 0.018 },
         { finance_id: 'FIN-7742', companyId: 'COMP-102', invoiceId: 'INV-9002', amount: 260000, currency: 'USD', advanceRate: 0.8, status: 'PENDING', feeRate: 0.021 },
     ],
+    // Executive directives registry (consumed by governance/directives → /directives).
+    directives: [
+        { title: 'Q4 Cross-Border Settlement Protocol', content: 'Mandate the Singapore Treasury node for all high-value APAC settlements to reduce FX volatility exposure.', scope: 'regional', targetJurisdiction: 'Singapore', issuedBy: 'Governance Council', priority: 'strategic', status: 'active', orgId: 'PLATFORM_ROOT', createdAt: iso(-1), updatedAt: iso(0) },
+        { title: 'Emergency Corridor Halt: Red Sea', content: 'Immediate operational halt for commercial traffic in the Red Sea zone due to systemic security disruption.', scope: 'global', targetJurisdiction: 'Global', issuedBy: 'Sovereign Command', priority: 'emergency', status: 'active', orgId: 'PLATFORM_ROOT', createdAt: iso(0), updatedAt: iso(0) },
+        { title: 'Enhanced KYC for New Sellers', content: 'All seller nodes onboarded this quarter require Tier-2 verification before first settlement.', scope: 'global', targetJurisdiction: 'Global', issuedBy: 'Compliance Command', priority: 'standard', status: 'active', orgId: 'PLATFORM_ROOT', createdAt: iso(-2), updatedAt: iso(-2) },
+    ],
+    // Governance policy rulebase (consumed by governance/policies → /governance_policies).
+    governance_policies: [
+        { name: 'High-Value Escrow Gate', category: 'FINANCIAL', enforcement: 'BLOCKING', rule: 'amount > $1M', status: 'ACTIVE', version: 4 },
+        { name: 'Identity Drift Lockdown', category: 'IDENTITY', enforcement: 'BLOCKING', rule: 'drift_index > 0.05', status: 'ACTIVE', version: 2 },
+        { name: 'Sanctioned Corridor Block', category: 'REGULATORY', enforcement: 'BLOCKING', rule: 'corridor IN restricted_list', status: 'ACTIVE', version: 12 },
+        { name: 'KYC Re-Verification', category: 'COMPLIANCE', enforcement: 'GATED', rule: 'kyc_age > 365d', status: 'ACTIVE', version: 3 },
+        { name: 'Manual Sourcing Audit', category: 'OPERATIONAL', enforcement: 'GATED', rule: 'category == "Defense"', status: 'DRAFT', version: 1 },
+    ],
     // Geopolitical risk alerts (consumed by geopolitical.service → /geopolitical_alerts;
     // crisis-center / discovery-signals / executive-reports / intelligence-hub-geopolitical).
     geopolitical_alerts: [

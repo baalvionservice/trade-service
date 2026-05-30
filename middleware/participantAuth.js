@@ -6,8 +6,19 @@
  */
 const { Op } = require('sequelize');
 
-const isAdmin = (req) => req.auth && req.auth.role === 'admin';
-const callerOrg = (req) => (req.auth && req.auth.orgCode) || null;
+// Platform-admin roles get unrestricted (cross-participant) visibility — identical to the
+// tenant-isolation bypass set in tenantContext.js / collectionController.js. The gateway maps
+// canonical identity to req.auth with both a scalar `role` (highest) and a `roles[]` array;
+// check both so an 'owner'/'super_admin' caller (whose scalar role isn't literally 'admin') is
+// still treated as a platform admin.
+const ADMIN_ROLES = new Set(['admin', 'owner', 'super_admin']);
+const isAdmin = (req) => {
+    const a = req && req.auth;
+    if (!a) return false;
+    if (a.role && ADMIN_ROLES.has(a.role)) return true;
+    return Array.isArray(a.roles) && a.roles.some((r) => ADMIN_ROLES.has(r));
+};
+const callerOrg = (req) => (req.auth && (req.auth.orgCode || req.auth.orgId)) || null;
 
 // Sequelize WHERE limiting Deals to the caller's participant orgs.
 // admin -> unrestricted; authed-without-org -> impossible match (sees nothing).
