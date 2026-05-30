@@ -8,6 +8,8 @@ const now = Date.now();
 const iso = (offsetDays = 0) => new Date(now + offsetDays * 86400000).toISOString();
 
 const ORGS = [
+    // Platform-level aggregate node — addressed by the governance/insight layer as PLATFORM_ROOT.
+    { code: 'PLATFORM_ROOT', tenant_id: 'T-DEMO', name: 'Baalvion Trade OS', type: 'regulator', country: 'Global', status: 'active', kyc_status: 'verified', risk_score: 0, contact_email: 'ops@baalvion.com' },
     { code: 'COMP-101', tenant_id: 'T-DEMO', name: 'Apex Renewable Industries', type: 'buyer', country: 'United States', status: 'active', kyc_status: 'verified', risk_score: 12.5, contact_email: 'ops@apex.demo' },
     { code: 'COMP-102', tenant_id: 'T-DEMO', name: 'Global Power Systems', type: 'seller', country: 'China', status: 'active', kyc_status: 'verified', risk_score: 8.0, contact_email: 'sales@gps.demo' },
 ];
@@ -126,6 +128,44 @@ const COLLECTIONS = {
         { code: '7403.11', description: 'Refined copper cathodes', category: 'Industrial & Metals', dutyRate: 0 },
         { code: '8507.60', description: 'Lithium-ion accumulators (batteries)', category: 'Energy Storage', dutyRate: 3.4 },
         { code: '8471.30', description: 'Portable automatic data-processing machines', category: 'Electronics', dutyRate: 0 },
+    ],
+    // Agent / broker marketplace (consumed by agent-service.ts → /agents, /service_requests).
+    agents: [
+        { name: 'Inter-Global Customs Group', type: 'broker', region: 'North America / EU', rating: 4.8, experience: 15, description: 'Premier customs brokerage specializing in complex tariff classifications and regulatory compliance for electronics and heavy machinery.', certifications: ['C-TPAT Certified', 'Licensed Customs Broker', 'AEO Status'], logo: 'IG' },
+        { name: 'SGS Inspection Services', type: 'inspector', region: 'Global', rating: 4.9, experience: 25, description: 'World-leading inspection, verification, testing, and certification company. Providing trust in every shipment.', certifications: ['ISO 9001', 'ISO 17025', 'CE Mark Inspector'], logo: 'SGS' },
+        { name: 'Trans-Ocean Facilitators', type: 'logistics', region: 'APAC / Middle East', rating: 4.6, experience: 10, description: 'On-the-ground logistics facilitators specializing in port authority coordination and intermodal transitions in Southeast Asia.', certifications: ['FIATA Member', 'IATA Agent'], logo: 'TF' },
+        { name: 'Euro-Compliance Partners', type: 'broker', region: 'European Union', rating: 4.7, experience: 12, description: 'Specialized VAT and customs advisory for trade within the European Economic Area.', certifications: ['EU Customs Registered', 'VAT Compliance Certified'], logo: 'EC' },
+    ],
+    service_requests: [
+        { agentName: 'Inter-Global Customs Group', agentType: 'broker', shipmentId: '1', type: 'Customs Clearance Support', status: 'accepted', createdAt: iso(-1) },
+    ],
+    // Bank instruments (consumed by trade-finance-service → /letters_of_credit, /invoice_financing).
+    letters_of_credit: [
+        { lc_id: 'LC-4821', buyerId: 'COMP-101', sellerId: 'COMP-102', amount: 1696000, currency: 'USD', status: 'ISSUED', issuingBankId: 'BANK-001', incoterm: 'CIF', expiryDate: iso(60) },
+        { lc_id: 'LC-4822', buyerId: 'COMP-101', sellerId: 'COMP-102', amount: 840000, currency: 'USD', status: 'PENDING', incoterm: 'FOB', expiryDate: iso(45) },
+    ],
+    invoice_financing: [
+        { finance_id: 'FIN-7741', companyId: 'COMP-102', invoiceId: 'INV-9001', amount: 420000, currency: 'USD', advanceRate: 0.85, status: 'ACTIVE', feeRate: 0.018 },
+        { finance_id: 'FIN-7742', companyId: 'COMP-102', invoiceId: 'INV-9002', amount: 260000, currency: 'USD', advanceRate: 0.8, status: 'PENDING', feeRate: 0.021 },
+    ],
+    // Geopolitical risk alerts (consumed by geopolitical.service → /geopolitical_alerts;
+    // crisis-center / discovery-signals / executive-reports / intelligence-hub-geopolitical).
+    geopolitical_alerts: [
+        { region: 'Red Sea', title: 'Maritime Security Escalation', message: 'Hostile activity targeting commercial vessels in the Bab al-Mandab strait.', impactScore: 92, affectedNodes: ['SR-3', 'Port-Suez'], severity: 'critical', createdAt: iso(0) },
+        { region: 'Taiwan Strait', title: 'Naval Exercises Detected', message: 'Increased activity may cause loitering delays for APAC outbound routes.', impactScore: 45, affectedNodes: ['SR-1'], severity: 'medium', createdAt: iso(0) },
+        { region: 'Panama Canal', title: 'Drought Transit Restrictions', message: 'Reduced daily transit slots; +2-3 day waits for non-booked vessels.', impactScore: 61, affectedNodes: ['SR-2', 'Port-Balboa'], severity: 'high', createdAt: iso(-1) },
+    ],
+    // AI-proposed actions awaiting two-key authorization (consumed by ai/orchestration → /ai_staged_actions).
+    ai_staged_actions: [
+        { agentId: 'TRES-1', title: 'Lock USD/INR forward on Order 1', type: 'TREASURY', impact: 'medium', confidence: 0.92, status: 'pending', rationale: 'Corridor FX volatility +3.2% over 7d.' },
+        { agentId: 'LOG-1', title: 'Re-route SHA→LGB via Singapore hub', type: 'LOGISTICS', impact: 'high', confidence: 0.86, status: 'pending', rationale: 'Customs-hold probability reduced 14%.' },
+    ],
+    // Logistics carrier marketplace (consumed by carrier-service.ts → /carriers).
+    carriers: [
+        { name: 'Maersk Logistics', rating: 4.9, regions: ['Asia', 'Europe', 'North America'], avgDeliveryTime: '22 Days', startingPrice: 1200, logo: 'M', description: 'The world leader in integrated container logistics, connecting and simplifying customers’ supply chains.', specializations: ['Ocean Freight', 'Customs Brokerage', 'Cold Chain'] },
+        { name: 'DHL Global Forwarding', rating: 4.7, regions: ['Global'], avgDeliveryTime: '14 Days', startingPrice: 2500, logo: 'D', description: 'Air, ocean and overland freight forwarding with reliable, cost-effective solutions.', specializations: ['Air Freight', 'Express Delivery', 'Hazardous Materials'] },
+        { name: 'Kuehne + Nagel', rating: 4.8, regions: ['Global'], avgDeliveryTime: '18 Days', startingPrice: 1800, logo: 'K', description: 'Flexible, customized logistics solutions across all transport modes.', specializations: ['Warehousing', 'Project Logistics', 'Sustainable Shipping'] },
+        { name: 'CMA CGM', rating: 4.5, regions: ['Africa', 'South America', 'Europe'], avgDeliveryTime: '30 Days', startingPrice: 950, logo: 'C', description: 'A world leader in shipping and logistics supporting the growth of global trade.', specializations: ['Ocean Freight', 'Intermodal', 'Door-to-Door'] },
     ],
 };
 

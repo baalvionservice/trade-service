@@ -12,6 +12,16 @@ const SEARCH_KEYS = ['search', 'q', 'query'];
 // Caller's tenant (from the token when present; demo tenant otherwise).
 const tenantOf = (req) => (req.auth && req.auth.tenantId) || 'T-DEMO';
 
+// Tenant-isolation bypass — identical to middleware/tenantContext.js for typed resources, so the
+// generic store behaves consistently with the rest of the platform (admins/owners see all tenants;
+// regular members are confined to their own). Without this, the store was the lone resource that
+// ignored the bypass, hiding seeded data from privileged callers.
+const BYPASS_ROLES = new Set(['admin', 'owner', 'super_admin']);
+const canBypass = (req) =>
+    !!(req.auth && Array.isArray(req.auth.roles) && req.auth.roles.some((r) => BYPASS_ROLES.has(r)));
+// True when `row` is visible to the caller (their tenant, or any tenant if they bypass).
+const visibleTo = (req, row) => canBypass(req) || row.tenantId === tenantOf(req);
+
 // Flatten a stored row into the document shape the frontend expects:
 // the JSONB payload at top level + id/timestamps injected.
 const flatten = (row) => ({
@@ -24,8 +34,10 @@ const flatten = (row) => ({
 const listDocs = async (req, res, next) => {
     try {
         const collection = req.params.collection;
+        const where = { collection };
+        if (!canBypass(req)) where.tenantId = tenantOf(req); // tenant isolation (admins/owners see all)
         const rows = await db.Collection.findAll({
-            where: { collection, tenantId: tenantOf(req) }, // tenant isolation
+            where,
             order: [['createdAt', 'DESC']],
             limit: Number(req.query.limit) || 500,
         });
@@ -55,7 +67,7 @@ const listDocs = async (req, res, next) => {
 const getDoc = async (req, res, next) => {
     try {
         const row = await db.Collection.findByPk(req.params.id);
-        if (!row || row.collection !== req.params.collection || row.tenantId !== tenantOf(req)) {
+        if (!row || row.collection !== req.params.collection || !visibleTo(req, row)) {
             return next(new AppError('NOT_FOUND', 'Document not found', 404));
         }
         return sendSuccess(req, res, flatten(row));
@@ -79,7 +91,7 @@ const createDoc = async (req, res, next) => {
 const updateDoc = async (req, res, next) => {
     try {
         const row = await db.Collection.findByPk(req.params.id);
-        if (!row || row.collection !== req.params.collection || row.tenantId !== tenantOf(req)) {
+        if (!row || row.collection !== req.params.collection || !visibleTo(req, row)) {
             return next(new AppError('NOT_FOUND', 'Document not found', 404));
         }
         const { id, createdAt, updatedAt, tenantId, ...patch } = req.body || {};
@@ -94,7 +106,7 @@ const updateDoc = async (req, res, next) => {
 const deleteDoc = async (req, res, next) => {
     try {
         const row = await db.Collection.findByPk(req.params.id);
-        if (!row || row.collection !== req.params.collection || row.tenantId !== tenantOf(req)) {
+        if (!row || row.collection !== req.params.collection || !visibleTo(req, row)) {
             return next(new AppError('NOT_FOUND', 'Document not found', 404));
         }
         await row.destroy();

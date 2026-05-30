@@ -10,7 +10,7 @@ module.exports = {
     apiVersion: 'v1',
     corsOrigins: parseList(process.env.CORS_ORIGINS, ['http://localhost:3000']),
     jwt: {
-        accessSecret: process.env.JWT_ACCESS_SECRET || 'replace-with-strong-secret',
+        accessSecret: require('@baalvion/auth-node').requireEnv('JWT_ACCESS_SECRET'),
         // Access-token lifetime. Default 24h for backward compatibility; tighten
         // in production (e.g. 15m) now that rotating refresh tokens exist.
         accessTtl: process.env.JWT_ACCESS_TTL || '24h',

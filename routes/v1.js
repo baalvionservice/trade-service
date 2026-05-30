@@ -27,6 +27,12 @@ router.get('/providers/health', require('../controller/providersController').hea
 router.use('/audit', require('./auditRoutes'));
 router.use('/queues', require('./queueRoutes'));
 
+// Live system telemetry (infra topology / pulse / readiness) — real measured stack state.
+const systemController = require('../controller/systemController');
+router.get('/system/services',  systemController.services);
+router.get('/system/pulse',     systemController.pulse);
+router.get('/system/readiness', systemController.readiness);
+
 // Generic persistence store — MUST be last so it only catches collections that
 // have no bespoke typed route above (alerts, risk_signals, contracts, ...).
 router.use('/:collection',   require('./collectionRoutes'));

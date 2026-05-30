@@ -1,5 +1,5 @@
 'use strict';
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { signAccessToken } = require('../utils/jwtserver');
 const totp = require('../utils/totp');

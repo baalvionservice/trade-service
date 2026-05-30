@@ -8,6 +8,7 @@ const cookieParser = require('cookie-parser');
 const config = require('./config/appConfig');
 const { tenantContext } = require('./middleware/tenantContext');
 const requestContext = require('./middleware/requestContext');
+const authTrace = require('./observability/authTrace'); // Phase 6E-6 — observability (additive)
 const rateLimit = require('./middleware/rateLimit');
 const v1Routes = require('./routes/v1');
 const { errorHandler, notFoundHandler } = require('./middleware/errorMiddleware');
@@ -26,6 +27,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 app.use(tenantContext); // establishes per-request tenant ALS scope for query hooks
 app.use(requestContext);
+app.use(authTrace.middleware('trade-service')); // Phase 6E-6 — logs on response finish
 app.use(metricsMiddleware);
 app.use(rateLimit());
 

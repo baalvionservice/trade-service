@@ -9,7 +9,15 @@ const listDeals = async (req, res, next) => {
     try {
         const { status, buyer_org_id, seller_org_id, page = 1, limit = 20 } = req.query;
         const where = {};
-        if (status) where.status = status;
+        if (status) {
+            // A filter for a status that isn't a valid enum value can match nothing — return an
+            // empty page rather than letting Postgres reject the invalid enum literal (a 22P02).
+            const validStatuses = db.Deal.rawAttributes.status.values || [];
+            if (!validStatuses.includes(status)) {
+                return sendPaginated(req, res, { items: [], total: 0, page: Number(page), limit: Number(limit) });
+            }
+            where.status = status;
+        }
         if (buyer_org_id) where.buyer_org_id = buyer_org_id;
         if (seller_org_id) where.seller_org_id = seller_org_id;
         // Dual-party scope: only deals the caller participates in (admin = all).

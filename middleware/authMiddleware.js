@@ -1,45 +1,55 @@
 'use strict';
-const jwtserver = require('../utils/jwtserver');
+// Phase 6E-8 HARD STATE: gateway-only trust boundary.
+// Bearer token verification permanently removed. No HS256 path. No fallback auth.
+// All authentication flows through auth-gateway (RS256 BFF). No env var override.
+// Rollback requires deployment revert (git revert / image rollback).
+//
+// trade-service shape: req.auth keeps scalar `role` + `tenantId` for backward compat with
+// trade-specific controllers and tenantContext.js. orgId is mapped from gateway org_id.
+const { bffBridge } = require('./bffBridge');
 const { AppError } = require('../utils/errors');
 
-const authMiddleware = (req, res, next) => {
+// Maps gateway canonical identity → trade's req.auth / req.user shape.
+const gatewayToAuth = (id) => ({
+    userId:      id.userId,
+    email:       id.email ?? null,
+    orgId:       id.orgId ?? null,
+    orgCode:     null,
+    role:        (id.roles && id.roles[0]) || 'client',  // scalar (highest) — requireRole compat
+    roles:       id.roles || [],
+    tenantId:    id.orgId ?? null,
+    permissions: id.permissions || [],
+    source:      'gateway',
+    algorithm:   'RS256-gateway',
+});
+
+// Hard gate: requires gateway-issued identity. Direct bearer tokens → 401.
+const authMiddleware = async (req, res, next) => {
     try {
-        const token = req.headers.authorization?.split(' ')[1];
-        if (!token) return next(new AppError('UNAUTHORIZED', 'No bearer token provided', 401));
-        const decoded = jwtserver.verifyAccessToken(token);
-        req.auth = {
-            userId: decoded.id,
-            email: decoded.email,
-            orgId: decoded.orgId || null,
-            orgCode: decoded.orgCode || null,
-            role: decoded.role || 'client',
-            tenantId: decoded.tenantId || null,
-            permissions: decoded.permissions || [],
-        };
+        const bridged = bffBridge(req);
+        if (bridged && bridged.reject) return next(new AppError('UNAUTHORIZED', 'Untrusted gateway identity', 401));
+        if (!bridged || !bridged.identity) {
+            return next(new AppError('GATEWAY_REQUIRED', 'Authentication via auth-gateway required; direct bearer tokens not accepted', 401));
+        }
+        req.auth = gatewayToAuth(bridged.identity);
         req.user = { id: req.auth.userId, role: req.auth.role, orgId: req.auth.orgId };
         return next();
     } catch {
-        return next(new AppError('UNAUTHORIZED', 'Invalid or expired token', 401));
+        return next(new AppError('UNAUTHORIZED', 'Authentication failed', 401));
     }
 };
 
-// Decodes the bearer token if present (sets req.auth) but never rejects — used
-// on read routes that must still be tenant-scoped when a token is supplied.
-const optionalAuth = (req, res, next) => {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) return next();
+// Soft gate: gateway identity if present, anonymous otherwise. Bearer tokens ignored.
+const optionalAuth = async (req, res, next) => {
     try {
-        const decoded = jwtserver.verifyAccessToken(token);
-        req.auth = {
-            userId: decoded.id,
-            email: decoded.email,
-            orgId: decoded.orgId || null,
-            orgCode: decoded.orgCode || null,
-            role: decoded.role || 'client',
-            tenantId: decoded.tenantId || null,
-            permissions: decoded.permissions || [],
-        };
-    } catch { /* invalid token on an optional route → treat as anonymous */ }
+        const bridged = bffBridge(req);
+        if (bridged && bridged.reject) return next();   // spoofed header → anonymous
+        if (bridged && bridged.identity) {
+            req.auth = gatewayToAuth(bridged.identity);
+            req.user = { id: req.auth.userId, role: req.auth.role, orgId: req.auth.orgId };
+        }
+        // No bearer token path.
+    } catch { /* anonymous on error */ }
     return next();
 };
 
