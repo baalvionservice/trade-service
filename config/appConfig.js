@@ -30,4 +30,20 @@ module.exports = {
         loginMaxAttempts: Number(process.env.LOGIN_MAX_ATTEMPTS || 5),
         loginLockoutMinutes: Number(process.env.LOGIN_LOCKOUT_MINUTES || 15),
     },
+    // financial-services-java integration (money/KYC/risk system of record).
+    finance: {
+        // Shared HMAC-SHA256 secret for the Java→Node finance-events webhook. MUST match the
+        // audit-service webhook_subscription secret in financial-services-java (FINANCE_WEBHOOK_SECRET).
+        webhookSecret: process.env.FINANCE_WEBHOOK_SECRET || 'dev_finance_webhook_secret_change_me_min32',
+        // Base URLs for the Java resource servers. The finance facade calls these directly on the
+        // trusted internal network (gateway-trusted in dev; RS256 bearer when secured).
+        payment:    process.env.SVC_PAYMENT    || 'http://localhost:3015',
+        ledger:     process.env.SVC_LEDGER     || 'http://localhost:3014',
+        account:    process.env.SVC_ACCOUNT    || 'http://localhost:3016',
+        escrow:     process.env.SVC_ESCROW     || 'http://localhost:3017',
+        settlement: process.env.SVC_SETTLEMENT || 'http://localhost:3018',
+        risk:       process.env.SVC_RISK       || 'http://localhost:3035',
+        // Set true once the Java suite is up; gates the facade from hard-failing when it's down.
+        enabled:    process.env.FINANCE_ENABLED === 'true',
+    },
 };

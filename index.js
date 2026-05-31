@@ -23,7 +23,9 @@ app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors({ origin: config.corsOrigins, credentials: true }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json({ limit: '2mb' }));
+// Capture the raw JSON body so webhook receivers (e.g. /v1/internal/finance-events) can verify
+// the HMAC-SHA256 signature over the EXACT bytes the sender signed — re-serializing would not match.
+app.use(express.json({ limit: '2mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 app.use(tenantContext); // establishes per-request tenant ALS scope for query hooks
 app.use(requestContext);

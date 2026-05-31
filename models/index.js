@@ -36,6 +36,10 @@ db.Message         = require('./messages')(sequelize, Sequelize.DataTypes);
 db.Collection      = require('./collections')(sequelize, Sequelize.DataTypes);
 db.AuditLog        = require('./audit_logs')(sequelize, Sequelize.DataTypes);
 db.RefreshToken    = require('./refresh_tokens')(sequelize, Sequelize.DataTypes);
+db.Carrier         = require('./carriers')(sequelize, Sequelize.DataTypes);
+db.FreightQuote    = require('./freight_quotes')(sequelize, Sequelize.DataTypes);
+db.BillOfLading    = require('./bills_of_lading')(sequelize, Sequelize.DataTypes);
+db.CustomsEntry    = require('./customs_entries')(sequelize, Sequelize.DataTypes);
 
 Object.values(db).forEach(model => {
     if (model && model.associate) model.associate(db);
@@ -58,6 +62,8 @@ const { currentTenant } = require('../middleware/tenantContext');
 const TENANT_EXCLUDED = new Set([
     'User', 'AuditLog', 'Sequelize', 'sequelize',
     'Listing', 'Rfq', 'Deal', 'Quotation', 'Message', 'Organization',
+    // Carrier: shared logistics marketplace (global registry, no tenant_id) — like Listing.
+    'Carrier',
     // RefreshToken: auth/session management is pre-tenant and scoped by user_id
     // explicitly (the refresh endpoint has no valid access token / tenant ctx).
     'RefreshToken',

@@ -6,6 +6,8 @@
  * unconfigured providers run in 'simulated' mode until their key is supplied.
  */
 const fx = require('./fx');
+const tracking = require('./tracking');
+const esign = require('./esign');
 
 // Declared integrations + the env key that activates 'live' mode.
 const REGISTRY = [
@@ -15,7 +17,8 @@ const REGISTRY = [
     { name: 'storage', key: 'STORAGE_BUCKET', note: 'Object storage for uploads (e.g. S3/GCS)' },
     { name: 'ai', key: 'GEMINI_API_KEY', note: 'Genkit/Gemini AI flows' },
     { name: 'ocr', key: 'OCR_API_KEY', note: 'Document OCR/extraction' },
-    { name: 'tracking', key: 'TRACKING_API_KEY', note: 'Carrier shipment tracking' },
+    { name: 'tracking', key: 'TRACKING_API_KEY', note: 'Carrier shipment tracking (live aggregator or simulated)', impl: tracking },
+    { name: 'esign', key: 'ESIGN_API_KEY', note: 'E-signature for B/L + contracts (DocuSeal/Adobe Sign)', impl: esign },
 ];
 
 function mode(entry) {
@@ -53,4 +56,4 @@ async function healthAll() {
     return { generatedAt: new Date().toISOString(), cache: cache.health(), providers: [live, ...others] };
 }
 
-module.exports = { fx, validateEnv, logEnvReport, healthAll, REGISTRY };
+module.exports = { fx, tracking, esign, validateEnv, logEnvReport, healthAll, REGISTRY };
