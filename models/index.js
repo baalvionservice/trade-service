@@ -40,6 +40,10 @@ db.Carrier         = require('./carriers')(sequelize, Sequelize.DataTypes);
 db.FreightQuote    = require('./freight_quotes')(sequelize, Sequelize.DataTypes);
 db.BillOfLading    = require('./bills_of_lading')(sequelize, Sequelize.DataTypes);
 db.CustomsEntry    = require('./customs_entries')(sequelize, Sequelize.DataTypes);
+db.CertificateOfOrigin = require('./certificates_of_origin')(sequelize, Sequelize.DataTypes);
+db.CarbonFootprint = require('./carbon_footprints')(sequelize, Sequelize.DataTypes);
+db.InsurancePolicy = require('./insurance_policies')(sequelize, Sequelize.DataTypes);
+db.InsuranceClaim  = require('./insurance_claims')(sequelize, Sequelize.DataTypes);
 
 Object.values(db).forEach(model => {
     if (model && model.associate) model.associate(db);

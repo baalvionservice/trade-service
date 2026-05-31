@@ -48,6 +48,16 @@ router.use('/bills_of_lading', require('./billOfLadingRoutes'));
 // Logistics — Customs Filing: typed customs entries + HS classifier + tariff + country templates.
 router.use('/customs_entries', require('./customsRoutes'));
 
+// Logistics — Certificate of Origin: typed CoO with issue → chamber-certify lifecycle + e-stamp.
+router.use('/certificates_of_origin', require('./certificateOfOriginRoutes'));
+
+// Logistics — Carbon Footprint (P2): CO2e estimate per shipment + offset + ESG report.
+router.use('/carbon_footprints', require('./carbonRoutes'));
+
+// Insurance — cargo/credit/parametric policies (quote→bind) + claims (file→pay) lifecycle.
+router.use('/insurance_policies', require('./insuranceRoutes'));
+router.use('/insurance_claims', require('./insuranceClaimsRoutes'));
+
 // Generic persistence store — MUST be last so it only catches collections that
 // have no bespoke typed route above (alerts, risk_signals, contracts, ...).
 router.use('/:collection',   require('./collectionRoutes'));
