@@ -4,9 +4,10 @@
 
 **Backend API for the Baalvion Global Trade Operating System**
 
-[![Trade OS](https://img.shields.io/badge/Trade_OS-Live-36E0C4?style=flat-square)](https://market.baalvion.com)
 [![Website](https://img.shields.io/badge/baalvion.com-0A0E27?style=flat-square&logo=googlechrome&logoColor=5B8CFF)](https://baalvion.com)
 [![License](https://img.shields.io/badge/license-Proprietary-1E1147?style=flat-square)](./LICENSE)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=nodedotjs&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 
 </div>
 
@@ -15,8 +16,8 @@
 ## Overview
 
 `trade-service` is the backend that powers the **Baalvion Global Trade OS** — the platform for
-cross-border trade execution, finance, compliance, and logistics. It exposes the REST APIs behind
-the [market.baalvion.com](https://market.baalvion.com) experience.
+cross-border trade execution, finance, compliance, and logistics. It exposes the REST APIs that the
+Global Trade Infrastructure frontend consumes.
 
 ## ✨ Capabilities
 
