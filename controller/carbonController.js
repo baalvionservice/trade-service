@@ -12,6 +12,27 @@ const { AppError } = require('../utils/errors');
 const genId = () => `CF-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
 const num = (x) => (x == null ? 0 : Number(x));
 
+// ── Tenant helpers ────────────────────────────────────────────────────────────
+function isAdmin(req) {
+    const roles = (req.auth && req.auth.roles) || [];
+    return roles.some((r) => r === 'admin' || r === 'super_admin' || r === 'owner');
+}
+
+function callerTenantId(req) {
+    return (req.auth && (req.auth.tenantId || req.auth.orgId)) || null;
+}
+
+async function fetchCarbonOwned(id, req, next) {
+    const r = await db.CarbonFootprint.findByPk(id);
+    if (!r) { next(new AppError('NOT_FOUND', 'Carbon footprint not found', 404)); return null; }
+    if (isAdmin(req)) return r;
+    const tenantId = callerTenantId(req);
+    if (tenantId && r.tenant_id && r.tenant_id !== tenantId) {
+        next(new AppError('NOT_FOUND', 'Carbon footprint not found', 404)); return null;
+    }
+    return r;
+}
+
 function toApi(r) {
     return {
         id: r.id, shipmentId: r.shipment_id, orderId: r.order_id, mode: r.mode,
@@ -62,6 +83,10 @@ const list = async (req, res, next) => {
         const sid = req.query.shipmentId || req.query.shipment_id;
         if (sid) where.shipment_id = sid;
         if (req.query.offsetStatus) where.offset_status = req.query.offsetStatus;
+        if (!isAdmin(req)) {
+            const tenantId = callerTenantId(req);
+            if (tenantId) where.tenant_id = tenantId;
+        }
         const rows = await db.CarbonFootprint.findAll({ where, order: [['created_at', 'DESC']], limit: 500 });
         return sendSuccess(req, res, rows.map(toApi));
     } catch (err) { return next(err); }
@@ -69,8 +94,8 @@ const list = async (req, res, next) => {
 
 const get = async (req, res, next) => {
     try {
-        const r = await db.CarbonFootprint.findByPk(req.params.id);
-        if (!r) return next(new AppError('NOT_FOUND', 'Carbon footprint not found', 404));
+        const r = await fetchCarbonOwned(req.params.id, req, next);
+        if (!r) return undefined;
         return sendSuccess(req, res, toApi(r));
     } catch (err) { return next(err); }
 };
@@ -80,6 +105,7 @@ const create = async (req, res, next) => {
     try {
         const b = req.body || {};
         const e = carbon.computeEmissions({ mode: b.mode, weightKg: b.weightKg ?? b.weight_kg, distanceKm: b.distanceKm ?? b.distance_km });
+        const tenantId = callerTenantId(req);
         const row = await db.CarbonFootprint.create({
             id: b.id || genId(),
             shipment_id: b.shipmentId ?? b.shipment_id,
@@ -94,6 +120,7 @@ const create = async (req, res, next) => {
             offset_cost_usd: e.offsetCostUsd,
             offset_status: 'none',
             methodology: e.methodology,
+            ...(tenantId ? { tenant_id: tenantId } : {}),
         });
         return sendSuccess(req, res, toApi(row), 201);
     } catch (err) { return next(err); }
@@ -102,8 +129,8 @@ const create = async (req, res, next) => {
 // POST /carbon_footprints/:id/offset — purchase the offset (simulated).
 const offset = async (req, res, next) => {
     try {
-        const r = await db.CarbonFootprint.findByPk(req.params.id);
-        if (!r) return next(new AppError('NOT_FOUND', 'Carbon footprint not found', 404));
+        const r = await fetchCarbonOwned(req.params.id, req, next);
+        if (!r) return undefined;
         if (r.offset_status === 'purchased') return sendSuccess(req, res, toApi(r));
         const provider = (req.body && req.body.provider) || 'Gold Standard';
         await r.update({

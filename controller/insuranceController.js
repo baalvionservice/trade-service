@@ -17,6 +17,38 @@ const pid = () => `INS-${Date.now().toString(36).toUpperCase()}-${crypto.randomB
 const cid = () => `CLM-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
 const num = (x) => (x == null ? 0 : Number(x));
 
+// ── Tenant helpers ────────────────────────────────────────────────────────────
+function isAdmin(req) {
+    const roles = (req.auth && req.auth.roles) || [];
+    return roles.some((r) => r === 'admin' || r === 'super_admin' || r === 'owner');
+}
+
+function callerTenantId(req) {
+    return (req.auth && (req.auth.tenantId || req.auth.orgId)) || null;
+}
+
+async function fetchPolicyOwned(id, req, next) {
+    const r = await db.InsurancePolicy.findByPk(id);
+    if (!r) { next(new AppError('NOT_FOUND', 'Policy not found', 404)); return null; }
+    if (isAdmin(req)) return r;
+    const tenantId = callerTenantId(req);
+    if (tenantId && r.tenant_id && r.tenant_id !== tenantId) {
+        next(new AppError('NOT_FOUND', 'Policy not found', 404)); return null;
+    }
+    return r;
+}
+
+async function fetchClaimOwned(id, req, next) {
+    const c = await db.InsuranceClaim.findByPk(id);
+    if (!c) { next(new AppError('NOT_FOUND', 'Claim not found', 404)); return null; }
+    if (isAdmin(req)) return c;
+    const tenantId = callerTenantId(req);
+    if (tenantId && c.tenant_id && c.tenant_id !== tenantId) {
+        next(new AppError('NOT_FOUND', 'Claim not found', 404)); return null;
+    }
+    return c;
+}
+
 // ── policy mapping ───────────────────────────────────────────────────────────
 function policyToApi(r) {
     return {
@@ -68,6 +100,10 @@ const listPolicies = async (req, res, next) => {
         if (sid) where.shipment_id = sid;
         if (req.query.status) where.status = req.query.status;
         if (req.query.type) where.insurance_type = req.query.type;
+        if (!isAdmin(req)) {
+            const tenantId = callerTenantId(req);
+            if (tenantId) where.tenant_id = tenantId;
+        }
         const rows = await db.InsurancePolicy.findAll({ where, order: [['created_at', 'DESC']], limit: 500 });
         return sendSuccess(req, res, rows.map(policyToApi));
     } catch (err) { return next(err); }
@@ -75,8 +111,8 @@ const listPolicies = async (req, res, next) => {
 
 const getPolicy = async (req, res, next) => {
     try {
-        const r = await db.InsurancePolicy.findByPk(req.params.id);
-        if (!r) return next(new AppError('NOT_FOUND', 'Policy not found', 404));
+        const r = await fetchPolicyOwned(req.params.id, req, next);
+        if (!r) return undefined;
         return sendSuccess(req, res, policyToApi(r));
     } catch (err) { return next(err); }
 };
@@ -92,6 +128,9 @@ const createPolicy = async (req, res, next) => {
         v.premium_rate = q.premiumRate;
         v.deductible = b.deductible != null ? b.deductible : q.deductible;
         v.status = 'pending'; // quoted, awaiting bind
+        // Stamp tenant_id from server context; never accept from client.
+        const tenantId = callerTenantId(req);
+        if (tenantId) v.tenant_id = tenantId;
         const row = await db.InsurancePolicy.create(v);
         return sendSuccess(req, res, policyToApi(row), 201);
     } catch (err) { return next(err); }
@@ -100,8 +139,8 @@ const createPolicy = async (req, res, next) => {
 // POST /:id/bind — pay the premium and activate the cover.
 const bindPolicy = async (req, res, next) => {
     try {
-        const r = await db.InsurancePolicy.findByPk(req.params.id);
-        if (!r) return next(new AppError('NOT_FOUND', 'Policy not found', 404));
+        const r = await fetchPolicyOwned(req.params.id, req, next);
+        if (!r) return undefined;
         if (r.status === 'active') return sendSuccess(req, res, policyToApi(r));
         if (!['pending', 'quoted'].includes(r.status)) {
             return next(new AppError('INVALID_TRANSITION', `cannot bind a policy in '${r.status}' state`, 409));
@@ -126,8 +165,8 @@ const bindPolicy = async (req, res, next) => {
 
 const cancelPolicy = async (req, res, next) => {
     try {
-        const r = await db.InsurancePolicy.findByPk(req.params.id);
-        if (!r) return next(new AppError('NOT_FOUND', 'Policy not found', 404));
+        const r = await fetchPolicyOwned(req.params.id, req, next);
+        if (!r) return undefined;
         await r.update({ status: 'cancelled', metadata: { ...(r.metadata || {}), cancelReason: (req.body && req.body.reason) || null } });
         return sendSuccess(req, res, policyToApi(r));
     } catch (err) { return next(err); }
@@ -149,10 +188,9 @@ function claimToApi(r) {
         createdAt: r.created_at, updatedAt: r.updated_at,
     };
 }
+// findClaim enforces tenant ownership for all lifecycle mutations.
 const findClaim = async (req, next) => {
-    const c = await db.InsuranceClaim.findByPk(req.params.id);
-    if (!c) { next(new AppError('NOT_FOUND', 'Claim not found', 404)); return null; }
-    return c;
+    return fetchClaimOwned(req.params.id, req, next);
 };
 function assertClaim(c, to) {
     if (!(CLAIM_VALID[c.status] || []).includes(to)) {
@@ -166,6 +204,10 @@ const listClaims = async (req, res, next) => {
         const pidq = req.query.policyId || req.query.policy_id;
         if (pidq) where.policy_id = pidq;
         if (req.query.status) where.status = req.query.status;
+        if (!isAdmin(req)) {
+            const tenantId = callerTenantId(req);
+            if (tenantId) where.tenant_id = tenantId;
+        }
         const rows = await db.InsuranceClaim.findAll({ where, order: [['created_at', 'DESC']], limit: 500 });
         return sendSuccess(req, res, rows.map(claimToApi));
     } catch (err) { return next(err); }
@@ -173,8 +215,8 @@ const listClaims = async (req, res, next) => {
 
 const getClaim = async (req, res, next) => {
     try {
-        const c = await db.InsuranceClaim.findByPk(req.params.id);
-        if (!c) return next(new AppError('NOT_FOUND', 'Claim not found', 404));
+        const c = await fetchClaimOwned(req.params.id, req, next);
+        if (!c) return undefined;
         return sendSuccess(req, res, claimToApi(c));
     } catch (err) { return next(err); }
 };
@@ -191,6 +233,7 @@ const fileClaim = async (req, res, next) => {
         if (amount > num(policy.coverage_amount)) {
             return next(new AppError('OVER_COVERAGE', 'claim amount exceeds policy coverage', 400));
         }
+        const tenantId = callerTenantId(req);
         const row = await db.InsuranceClaim.create({
             id: b.id || cid(),
             policy_id: policyId,
@@ -200,6 +243,7 @@ const fileClaim = async (req, res, next) => {
             reason: b.reason,
             status: 'filed',
             filed_at: new Date(),
+            ...(tenantId ? { tenant_id: tenantId } : {}),
         });
         return sendSuccess(req, res, claimToApi(row), 201);
     } catch (err) { return next(err); }

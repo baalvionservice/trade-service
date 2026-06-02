@@ -17,8 +17,13 @@ const JWKS_URI = (config.jwt && config.jwt.jwksUri) || process.env.JWKS_URI
 
 function _loadIORedis() {
   try { return require('ioredis'); } catch {}
-  try { return require(process.env.IOREDIS_PATH || 'd:/Baalvion Projects/Backend/services/identity/auth-service/node_modules/ioredis'); }
-  catch (e) { console.warn('[rsVerifier] ioredis unavailable; JTI blacklist check OFF:', e.message); return null; }
+  // Removed hardcoded absolute path fallback — only attempt a user-supplied IOREDIS_PATH if present.
+  if (process.env.IOREDIS_PATH) {
+    try { return require(process.env.IOREDIS_PATH); }
+    catch (e) { console.warn('[rsVerifier] IOREDIS_PATH require failed; JTI blacklist check OFF:', e.message); }
+  }
+  console.warn('[rsVerifier] ioredis not found in node_modules; JTI blacklist check OFF. Install ioredis in this service.');
+  return null;
 }
 let _redis;
 function getRedis() {

@@ -37,6 +37,29 @@ const genBlNumber = (carrierId) => {
 
 const holderName = (party) => (party && (party.name || party.org || party.orgId)) || null;
 
+// ── Tenant helpers ────────────────────────────────────────────────────────────
+function isAdmin(req) {
+    const roles = (req.auth && req.auth.roles) || [];
+    return roles.some((r) => r === 'admin' || r === 'super_admin' || r === 'owner');
+}
+
+function callerTenantId(req) {
+    return (req.auth && (req.auth.tenantId || req.auth.orgId)) || null;
+}
+
+// Fetch a BillOfLading by PK and enforce tenant ownership.
+// Returns the record or calls next(err) and returns null.
+async function fetchBlOwned(id, req, next) {
+    const bl = await db.BillOfLading.findByPk(id);
+    if (!bl) { next(new AppError('NOT_FOUND', 'Bill of lading not found', 404)); return null; }
+    if (isAdmin(req)) return bl;
+    const tenantId = callerTenantId(req);
+    if (tenantId && bl.tenant_id && bl.tenant_id !== tenantId) {
+        next(new AppError('NOT_FOUND', 'Bill of lading not found', 404)); return null;
+    }
+    return bl;
+}
+
 // ── CRUD ─────────────────────────────────────────────────────────────────────
 const list = async (req, res, next) => {
     try {
@@ -46,6 +69,10 @@ const list = async (req, res, next) => {
         if (order_id) where.order_id = order_id;
         if (status) where.status = status;
         if (holder) where.current_holder = holder;
+        if (!isAdmin(req)) {
+            const tenantId = callerTenantId(req);
+            if (tenantId) where.tenant_id = tenantId;
+        }
         const offset = (Number(page) - 1) * Number(limit);
         const { count, rows } = await db.BillOfLading.findAndCountAll({ where, limit: Number(limit), offset, order: [['created_at', 'DESC']] });
         return sendPaginated(req, res, { items: rows, total: count, page: Number(page), limit: Number(limit) });
@@ -54,8 +81,8 @@ const list = async (req, res, next) => {
 
 const get = async (req, res, next) => {
     try {
-        const bl = await db.BillOfLading.findByPk(req.params.id);
-        if (!bl) return next(new AppError('NOT_FOUND', 'Bill of lading not found', 404));
+        const bl = await fetchBlOwned(req.params.id, req, next);
+        if (!bl) return undefined;
         return sendSuccess(req, res, bl);
     } catch (err) { return next(err); }
 };
@@ -63,21 +90,24 @@ const get = async (req, res, next) => {
 const create = async (req, res, next) => {
     try {
         const body = req.body || {};
+        // Strip any client-supplied tenant_id; stamp from server context instead.
+        const { tenant_id: _ignored, ...restBody } = body;
+        const tenantId = callerTenantId(req);
         const bl = await db.BillOfLading.create({
-            ...body,
-            id: body.id || genId(),
-            bl_number: body.bl_number || genBlNumber(body.carrier_name || body.carrier_id),
+            ...restBody,
+            id: restBody.id || genId(),
+            bl_number: restBody.bl_number || genBlNumber(restBody.carrier_name || restBody.carrier_id),
             status: 'draft',
+            ...(tenantId ? { tenant_id: tenantId } : {}),
         });
         return sendSuccess(req, res, bl, 201);
     } catch (err) { return next(err); }
 };
 
 // ── lifecycle actions ────────────────────────────────────────────────────────
+// findOr404 enforces tenant ownership for all lifecycle mutations.
 const findOr404 = async (req, next) => {
-    const bl = await db.BillOfLading.findByPk(req.params.id);
-    if (!bl) { next(new AppError('NOT_FOUND', 'Bill of lading not found', 404)); return null; }
-    return bl;
+    return fetchBlOwned(req.params.id, req, next);
 };
 
 // draft → issued (carrier signs, title vests in the shipper).

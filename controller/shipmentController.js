@@ -7,6 +7,26 @@ const { AppError } = require('../utils/errors');
 
 const DWELL_HOURS = Number(process.env.SHIPMENT_DWELL_HOURS || 72);
 
+function isAdmin(req) {
+    const roles = (req.auth && req.auth.roles) || [];
+    return roles.some((r) => r === 'admin' || r === 'super_admin' || r === 'owner');
+}
+
+function callerTenantId(req) {
+    return (req.auth && (req.auth.tenantId || req.auth.orgId)) || null;
+}
+
+async function fetchShipmentOwned(id, req, next) {
+    const shipment = await db.Shipment.findByPk(id);
+    if (!shipment) { next(new AppError('NOT_FOUND', 'Shipment not found', 404)); return null; }
+    if (isAdmin(req)) return shipment;
+    const tenantId = callerTenantId(req);
+    if (tenantId && shipment.tenant_id && shipment.tenant_id !== tenantId) {
+        next(new AppError('NOT_FOUND', 'Shipment not found', 404)); return null;
+    }
+    return shipment;
+}
+
 const listShipments = async (req, res, next) => {
     try {
         const { status, order_id, carrier_id, page = 1, limit = 20 } = req.query;
@@ -14,6 +34,10 @@ const listShipments = async (req, res, next) => {
         if (status) where.status = status;
         if (order_id) where.order_id = order_id;
         if (carrier_id) where.carrier_id = carrier_id;
+        if (!isAdmin(req)) {
+            const tenantId = callerTenantId(req);
+            if (tenantId) where.tenant_id = tenantId;
+        }
         const offset = (Number(page) - 1) * Number(limit);
         const { count, rows } = await db.Shipment.findAndCountAll({
             where, limit: Number(limit), offset, order: [['created_at', 'DESC']],
@@ -26,8 +50,8 @@ const listShipments = async (req, res, next) => {
 
 const getShipment = async (req, res, next) => {
     try {
-        const shipment = await db.Shipment.findByPk(req.params.id);
-        if (!shipment) return next(new AppError('NOT_FOUND', 'Shipment not found', 404));
+        const shipment = await fetchShipmentOwned(req.params.id, req, next);
+        if (!shipment) return undefined;
         return sendSuccess(req, res, shipment);
     } catch (err) {
         return next(err);
@@ -36,7 +60,9 @@ const getShipment = async (req, res, next) => {
 
 const createShipment = async (req, res, next) => {
     try {
-        const shipment = await db.Shipment.create(req.body);
+        const { tenant_id: _ignored, ...body } = req.body || {};
+        const tenantId = callerTenantId(req);
+        const shipment = await db.Shipment.create({ ...body, ...(tenantId ? { tenant_id: tenantId } : {}) });
         return sendSuccess(req, res, shipment, 201);
     } catch (err) {
         return next(err);
@@ -45,9 +71,10 @@ const createShipment = async (req, res, next) => {
 
 const updateShipment = async (req, res, next) => {
     try {
-        const shipment = await db.Shipment.findByPk(req.params.id);
-        if (!shipment) return next(new AppError('NOT_FOUND', 'Shipment not found', 404));
-        await shipment.update(req.body);
+        const shipment = await fetchShipmentOwned(req.params.id, req, next);
+        if (!shipment) return undefined;
+        const { tenant_id: _ignored, ...updates } = req.body || {};
+        await shipment.update(updates);
         return sendSuccess(req, res, shipment);
     } catch (err) {
         return next(err);
@@ -56,8 +83,8 @@ const updateShipment = async (req, res, next) => {
 
 const addMilestone = async (req, res, next) => {
     try {
-        const shipment = await db.Shipment.findByPk(req.params.id);
-        if (!shipment) return next(new AppError('NOT_FOUND', 'Shipment not found', 404));
+        const shipment = await fetchShipmentOwned(req.params.id, req, next);
+        if (!shipment) return undefined;
         const milestone = { ...req.body, timestamp: req.body.timestamp || new Date().toISOString() };
         const milestones = [...(shipment.milestones || []), milestone];
         await shipment.update({ milestones });
@@ -69,8 +96,8 @@ const addMilestone = async (req, res, next) => {
 
 const addException = async (req, res, next) => {
     try {
-        const shipment = await db.Shipment.findByPk(req.params.id);
-        if (!shipment) return next(new AppError('NOT_FOUND', 'Shipment not found', 404));
+        const shipment = await fetchShipmentOwned(req.params.id, req, next);
+        if (!shipment) return undefined;
         const exception = { ...req.body, timestamp: req.body.timestamp || new Date().toISOString() };
         const exceptions = [...(shipment.exceptions || []), exception];
         await shipment.update({ exceptions });
@@ -82,8 +109,8 @@ const addException = async (req, res, next) => {
 
 const updateShipmentStatus = async (req, res, next) => {
     try {
-        const shipment = await db.Shipment.findByPk(req.params.id);
-        if (!shipment) return next(new AppError('NOT_FOUND', 'Shipment not found', 404));
+        const shipment = await fetchShipmentOwned(req.params.id, req, next);
+        if (!shipment) return undefined;
         const { status } = req.body;
         if (!status) return next(new AppError('BAD_REQUEST', 'status is required', 400));
         await shipment.update({ status });
@@ -188,7 +215,7 @@ async function applyTracking(shipment, view) {
     return { shipment, changes };
 }
 
-// GET /shipments/:id/track — read-only current tracking view (provider + persisted milestones/exceptions).
+// GET /shipments/:id/track — read-only current tracking view (public, no authMiddleware on this route).
 const trackShipment = async (req, res, next) => {
     try {
         const shipment = await db.Shipment.findByPk(req.params.id);
@@ -205,7 +232,7 @@ const trackShipment = async (req, res, next) => {
     } catch (err) { return next(err); }
 };
 
-// POST /shipments/:id/track/refresh — pull provider, advance the shipment, detect exceptions.
+// POST /shipments/:id/track/refresh — pull provider, advance the shipment, detect exceptions (public).
 const refreshTracking = async (req, res, next) => {
     try {
         const shipment = await db.Shipment.findByPk(req.params.id);

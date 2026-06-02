@@ -5,6 +5,26 @@ const { sendSuccess, sendPaginated } = require('../utils/response');
 const { AppError } = require('../utils/errors');
 const { initiatePayment, refFromInitiate } = require('../lib/financeClient');
 
+function isAdmin(req) {
+    const roles = (req.auth && req.auth.roles) || [];
+    return roles.some((r) => r === 'admin' || r === 'super_admin' || r === 'owner');
+}
+
+function callerTenantId(req) {
+    return (req.auth && (req.auth.tenantId || req.auth.orgId)) || null;
+}
+
+async function fetchPaymentOwned(id, req, next) {
+    const payment = await db.Payment.findByPk(id);
+    if (!payment) { next(new AppError('NOT_FOUND', 'Payment not found', 404)); return null; }
+    if (isAdmin(req)) return payment;
+    const tenantId = callerTenantId(req);
+    if (tenantId && payment.tenant_id && payment.tenant_id !== tenantId) {
+        next(new AppError('NOT_FOUND', 'Payment not found', 404)); return null;
+    }
+    return payment;
+}
+
 const listPayments = async (req, res, next) => {
     try {
         const { order_id, status, payer_org_id, payee_org_id, page = 1, limit = 20 } = req.query;
@@ -13,6 +33,10 @@ const listPayments = async (req, res, next) => {
         if (status) where.status = status;
         if (payer_org_id) where.payer_org_id = payer_org_id;
         if (payee_org_id) where.payee_org_id = payee_org_id;
+        if (!isAdmin(req)) {
+            const tenantId = callerTenantId(req);
+            if (tenantId) where.tenant_id = tenantId;
+        }
         const offset = (Number(page) - 1) * Number(limit);
         const { count, rows } = await db.Payment.findAndCountAll({
             where, limit: Number(limit), offset, order: [['created_at', 'DESC']],
@@ -25,8 +49,8 @@ const listPayments = async (req, res, next) => {
 
 const getPayment = async (req, res, next) => {
     try {
-        const payment = await db.Payment.findByPk(req.params.id);
-        if (!payment) return next(new AppError('NOT_FOUND', 'Payment not found', 404));
+        const payment = await fetchPaymentOwned(req.params.id, req, next);
+        if (!payment) return undefined;
         return sendSuccess(req, res, payment);
     } catch (err) {
         return next(err);
@@ -35,8 +59,12 @@ const getPayment = async (req, res, next) => {
 
 const createPayment = async (req, res, next) => {
     try {
+        // Strip any client-supplied tenant_id; stamp from server context.
+        const { tenant_id: _ignored, ...body } = req.body || {};
+        const tenantId = callerTenantId(req);
+
         // Local projection row (fast UI reads; reconciled by the finance-events webhook).
-        const payment = await db.Payment.create(req.body);
+        const payment = await db.Payment.create({ ...body, ...(tenantId ? { tenant_id: tenantId } : {}) });
 
         // Route the real money movement through financial-services-java (system of record).
         // Disabled (default in this sandbox where the Java suite isn't running) → pure local behavior.
@@ -50,9 +78,9 @@ const createPayment = async (req, res, next) => {
                 const result = await initiatePayment({
                     amount: payment.amount,
                     currency: payment.currency,
-                    scheme: req.body.scheme || req.body.payment_scheme,
-                    sourceAccountId: req.body.source_account_id,
-                    destinationAccountId: req.body.destination_account_id,
+                    scheme: body.scheme || body.payment_scheme,
+                    sourceAccountId: body.source_account_id,
+                    destinationAccountId: body.destination_account_id,
                     metadata: {
                         payerOrgId: payment.payer_org_id, payeeOrgId: payment.payee_org_id,
                         orderId: payment.order_id, method: payment.method,
@@ -78,8 +106,8 @@ const createPayment = async (req, res, next) => {
 
 const updatePaymentStatus = async (req, res, next) => {
     try {
-        const payment = await db.Payment.findByPk(req.params.id);
-        if (!payment) return next(new AppError('NOT_FOUND', 'Payment not found', 404));
+        const payment = await fetchPaymentOwned(req.params.id, req, next);
+        if (!payment) return undefined;
         const { status, settled_at } = req.body;
         if (!status) return next(new AppError('BAD_REQUEST', 'status is required', 400));
         const updates = { status };
