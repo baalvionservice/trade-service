@@ -6,7 +6,7 @@ const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 
 const config = require('./config/appConfig');
-const { tenantContext } = require('./middleware/tenantContext');
+const { tenantContext, currentTenant } = require('./middleware/tenantContext');
 const requestContext = require('./middleware/requestContext');
 const authTrace = require('./observability/authTrace'); // Phase 6E-6 — observability (additive)
 const rateLimit = require('./middleware/rateLimit');
@@ -15,6 +15,38 @@ const { errorHandler, notFoundHandler } = require('./middleware/errorMiddleware'
 const db = require('./models');
 const providers = require('./providers');
 const { metricsMiddleware, metricsHandler } = require('./middleware/metrics');
+
+// ── R1 RLS GUC bridge ───────────────────────────────────────────────────────
+// DB-level Row-Level Security (migration 007) is driven by two session GUCs
+// (app.current_tenant / app.tenant_bypass). The app-layer ALS hooks inject the
+// tenant into the WHERE clause but do NOT set these GUCs, so once the service
+// connects as the non-superuser baalvion_app role, RLS would see no tenant and
+// fail-closed on managed transactions. This patch stamps the GUCs LOCAL to every
+// managed transaction from the request's tenant ALS context. It is a harmless
+// no-op under the current owner connection (RLS is bypassed for the owner).
+// GUC names mirror @baalvion/tenancy SESSION (and migration 007). Non-transactional
+// hot reads still rely on the ALS WHERE-injection; converting them to a per-request
+// tenant connection is tracked as the R1 read-path follow-up (P1) and is a
+// prerequisite for the DB_USER=baalvion_app cutover.
+const _origTransaction = db.sequelize.transaction.bind(db.sequelize);
+db.sequelize.transaction = function tenantAwareTransaction(optsOrFn, maybeFn) {
+    const optsFirst = typeof optsOrFn !== 'function';
+    const fn = optsFirst ? maybeFn : optsOrFn;
+    const opts = optsFirst ? optsOrFn : undefined;
+    // Unmanaged transaction (no callback → caller manages commit/rollback): pass through.
+    if (typeof fn !== 'function') return _origTransaction(optsOrFn, maybeFn);
+    const wrapped = async (t) => {
+        const ctx = currentTenant() || {};
+        const tenant = ctx.tenantId == null ? '' : String(ctx.tenantId);
+        const bypass = ctx.bypass ? 'on' : 'off';
+        await db.sequelize.query(
+            "SELECT set_config('app.current_tenant', :tenant, true), set_config('app.tenant_bypass', :bypass, true)",
+            { replacements: { tenant, bypass }, transaction: t },
+        );
+        return fn(t);
+    };
+    return opts ? _origTransaction(opts, wrapped) : _origTransaction(wrapped);
+};
 
 const app = express();
 const server = http.createServer(app);
