@@ -49,6 +49,12 @@ module.exports = {
         user: process.env.DB_USER || 'baalvion',
         password: process.env.DB_PASSWORD || '',
     },
+    // R1 read-path cutover (P1-8): when true, every request is pinned to one DB
+    // connection carrying the tenant RLS GUCs so non-transactional reads stay scoped
+    // under the non-superuser baalvion_app role. OFF by default — it changes the
+    // service to a per-request-transaction model (connection held for the request),
+    // which must be load-tested. Enable it ATOMICALLY with DB_USER=baalvion_app.
+    rlsReadPath: process.env.RLS_READ_PATH === 'true',
     security: {
         ipRateLimit: Number(process.env.RATE_LIMIT_IP_MAX || 120),
         // Per-account brute-force lockout: after N consecutive failed logins the

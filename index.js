@@ -7,6 +7,7 @@ const cookieParser = require('cookie-parser');
 
 const config = require('./config/appConfig');
 const { tenantContext, currentTenant } = require('./middleware/tenantContext');
+const { tenantConnection } = require('./middleware/tenantConnection');
 const requestContext = require('./middleware/requestContext');
 const authTrace = require('./observability/authTrace'); // Phase 6E-6 — observability (additive)
 const rateLimit = require('./middleware/rateLimit');
@@ -25,9 +26,9 @@ const { metricsMiddleware, metricsHandler } = require('./middleware/metrics');
 // managed transaction from the request's tenant ALS context. It is a harmless
 // no-op under the current owner connection (RLS is bypassed for the owner).
 // GUC names mirror @baalvion/tenancy SESSION (and migration 007). Non-transactional
-// hot reads still rely on the ALS WHERE-injection; converting them to a per-request
-// tenant connection is tracked as the R1 read-path follow-up (P1) and is a
-// prerequisite for the DB_USER=baalvion_app cutover.
+// hot reads are covered by middleware/tenantConnection.js (R1 read-path cutover,
+// P1-8), which pins a per-request connection carrying the same GUCs — so the service
+// is safe to run as DB_USER=baalvion_app.
 const _origTransaction = db.sequelize.transaction.bind(db.sequelize);
 db.sequelize.transaction = function tenantAwareTransaction(optsOrFn, maybeFn) {
     const optsFirst = typeof optsOrFn !== 'function';
@@ -60,6 +61,13 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '2mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 app.use(tenantContext); // establishes per-request tenant ALS scope for query hooks
+// R1 (P1-8): pin a per-request DB connection stamped with the tenant GUCs so
+// non-transactional controller reads carry RLS context under baalvion_app. Mounted
+// AFTER tenantContext (needs the tenant ctx) and BEFORE the routes that read the DB.
+// Env-GATED: dormant by default (no behavioural change) because it switches the
+// service to a per-request-transaction model that must be load-tested. Enable it
+// ATOMICALLY with the DB_USER=baalvion_app cutover via RLS_READ_PATH=true.
+if (config.rlsReadPath) app.use(tenantConnection(db.sequelize));
 app.use(requestContext);
 app.use(authTrace.middleware('trade-service')); // Phase 6E-6 — logs on response finish
 app.use(metricsMiddleware);

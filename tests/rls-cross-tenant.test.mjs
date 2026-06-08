@@ -4,9 +4,9 @@
 // enforced) and asserts the fail-closed tenant_isolation policy from migration
 // 007 actually isolates tenants. This is the regression gate for R1.
 //
-// Run:  node --test tests/rls-cross-tenant.test.mjs
+// Run:  DB_HOST=127.0.0.1 node --test tests/rls-cross-tenant.test.mjs
 // Env:  DB_HOST(127.0.0.1) DB_PORT(5432) DB_NAME(baalvion_db)
-//       BAALVION_APP_USER(baalvion_app) BAALVION_APP_PASSWORD(dev_app_pw_2026)
+//       BAALVION_APP_USER(baalvion_app) BAALVION_APP_PASSWORD(baalvion_app_dev_2026)
 //
 // CI spins Postgres, applies 027_app_role.sql + the trade migrations, then runs
 // this with the CI app password.
@@ -78,6 +78,49 @@ test('R1 cross-tenant RLS isolation (as baalvion_app)', async (t) => {
     await t.test('bypass=on sees both tenants', async () => {
       await setCtx(c, '', 'on');
       assert.equal(await countProbe(c), 2);
+    });
+
+    // cleanup.
+    await setCtx(c, '', 'on');
+    await c.query("DELETE FROM trade.orders WHERE tenant_id LIKE 'rls-probe-%'");
+  });
+});
+
+// R1 read-path cutover (P1-8) — proves middleware/tenantConnection.js's mechanism:
+// a per-request DEDICATED connection gets the tenant GUC via session-level
+// set_config(..., is_local=false) (NO wrapping transaction, mirroring a controller's
+// Model.findAll), serves tenant-scoped non-transactional reads, then is RESET on
+// release so the recycled pooled connection is fail-closed for the next request.
+test('R1 read-path: non-transactional read is tenant-scoped + reset is leak-proof', async (t) => {
+  await withClient(async (c) => {
+    // seed two tenants via bypass.
+    await setCtx(c, '', 'on');
+    await c.query("DELETE FROM trade.orders WHERE tenant_id LIKE 'rls-probe-%'");
+    await c.query(
+      "INSERT INTO trade.orders (tenant_id,status,created_at,updated_at) VALUES ($1,'pending',now(),now()),($2,'pending',now(),now())",
+      [A, B]);
+
+    await t.test('stamped connection: non-transactional read sees only own tenant', async () => {
+      // exactly what tenantConnection middleware does at request start, then a
+      // plain (non-transactional) SELECT like an unmodified controller findAll.
+      await setCtx(c, A, 'off');
+      const rows = (await c.query(
+        "SELECT tenant_id FROM trade.orders WHERE tenant_id LIKE 'rls-probe-%'")).rows;
+      assert.equal(rows.length, 1, 'tenant A sees exactly its own row');
+      assert.equal(rows[0].tenant_id, A);
+    });
+
+    await t.test('release resets GUC: recycled connection is fail-closed', async () => {
+      // simulate the middleware release() step on the SAME connection.
+      await setCtx(c, '', 'off');
+      assert.equal(await countProbe(c), 0, 'after reset, the connection sees no tenant rows');
+    });
+
+    await t.test('re-stamp for the next tenant works on the same connection', async () => {
+      await setCtx(c, B, 'off');
+      const rows = (await c.query(
+        "SELECT tenant_id FROM trade.orders WHERE tenant_id LIKE 'rls-probe-%'")).rows;
+      assert.deepEqual(rows.map((r) => r.tenant_id), [B], 'tenant B sees only B on the reused connection');
     });
 
     // cleanup.
