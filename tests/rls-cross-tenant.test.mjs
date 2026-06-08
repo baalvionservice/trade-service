@@ -19,7 +19,7 @@ const cfg = {
   port: Number(process.env.DB_PORT || 5432),
   database: process.env.DB_NAME || 'baalvion_db',
   user: process.env.BAALVION_APP_USER || 'baalvion_app',
-  password: process.env.BAALVION_APP_PASSWORD || 'dev_app_pw_2026',
+  password: process.env.BAALVION_APP_PASSWORD || 'baalvion_app_dev_2026',
 };
 
 const A = 'rls-probe-A';
