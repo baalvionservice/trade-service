@@ -35,8 +35,11 @@ function verifySignature(req) {
     const header = req.headers['x-webhook-signature'] || '';
     const secret = config.finance.webhookSecret;
     if (!secret || !header.startsWith('sha256=')) return false;
-    const raw = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
-    const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');
+    // CR-9: verify over the EXACT raw bytes only. A JSON re-stringify fallback
+    // would let a caller bypass the signature by exploiting key-order / encoding
+    // differences, so a missing rawBody is a hard verification failure.
+    if (!req.rawBody || !Buffer.isBuffer(req.rawBody)) return false;
+    const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
     const a = Buffer.from(header);
     const b = Buffer.from(expected);
     return a.length === b.length && crypto.timingSafeEqual(a, b);

@@ -13,21 +13,41 @@ const DEV_DEFAULTS = new Set([
     'change_me',
 ]);
 
+// Only genuine local development tolerates dev-default secrets. Any other
+// environment (production, staging, etc.) must supply real secrets (CR-9).
+const ENV = process.env.NODE_ENV || 'development';
+const IS_DEV = ENV === 'development' || ENV === 'test';
+
 /**
- * Fail fast in production when a critical secret is missing or equals a known dev placeholder.
- * In non-production environments the dev default is returned so local dev still boots without .env.
+ * Fail fast in every non-development environment when a critical secret is
+ * missing or equals a known dev placeholder. Only local dev/test return the
+ * dev default so the service still boots without a populated .env.
  */
 function requireSecret(envVar, devDefault, label) {
     const value = process.env[envVar];
-    const isProduction = (process.env.NODE_ENV === 'production');
-    if (isProduction) {
+    if (!IS_DEV) {
         if (!value || value.trim() === '' || DEV_DEFAULTS.has(value.trim())) {
-            console.error(`[appConfig] FATAL: ${label} (${envVar}) is missing or uses a known dev default in production.`);
+            console.error(`[appConfig] FATAL: ${label} (${envVar}) is missing or uses a known dev default outside development.`);
             process.exit(1);
         }
         return value.trim();
     }
     return value || devDefault;
+}
+
+/**
+ * Resolve the island auth mode (CR-10). Outside development the gateway-signed
+ * identity is mandatory: 'hybrid'/'legacy' would silently re-open the bearer
+ * fallback that bypasses session revocation, org kill-switch and CSRF, so they
+ * fail fast. 'strict' and 'rs256_only' are the only accepted non-dev modes.
+ */
+function resolveIslandAuthMode() {
+    const m = (process.env.ISLAND_AUTH_MODE || 'hybrid').toLowerCase();
+    if (!IS_DEV && (m === 'hybrid' || m === 'legacy')) {
+        console.error(`[appConfig] FATAL: ISLAND_AUTH_MODE='${m}' is not permitted outside development; set it to 'strict'.`);
+        process.exit(1);
+    }
+    return m;
 }
 
 module.exports = {
@@ -49,6 +69,8 @@ module.exports = {
         user: process.env.DB_USER || 'baalvion',
         password: process.env.DB_PASSWORD || '',
     },
+    // CR-10: gateway-signed identity mode. Fails fast outside dev for hybrid/legacy.
+    islandAuthMode: resolveIslandAuthMode(),
     // R1 read-path cutover (P1-8): when true, every request is pinned to one DB
     // connection carrying the tenant RLS GUCs so non-transactional reads stay scoped
     // under the non-superuser baalvion_app role. OFF by default — it changes the
