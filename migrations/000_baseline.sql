@@ -2,7 +2,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict IpXj8Fp3QrTO5gQ9hlv5j9ZafrBXkppT56N34ejITOFXQhEgCxMthfERJoWcKf5
 
 -- Dumped from database version 15.18
 -- Dumped by pg_dump version 15.18
@@ -1548,5 +1547,4 @@ ALTER TABLE ONLY trade.wallets
 -- PostgreSQL database dump complete
 --
 
-\unrestrict IpXj8Fp3QrTO5gQ9hlv5j9ZafrBXkppT56N34ejITOFXQhEgCxMthfERJoWcKf5
 
