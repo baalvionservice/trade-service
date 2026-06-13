@@ -1,16 +1,22 @@
 'use strict';
+// RETIRED: wallet balances are owned by the Java wallet-service (gateway maps
+// /api/wallets -> :3039/api/v1/wallets). trade-service must not credit/debit a divergent
+// local wallet (data-split risk), so this HTTP surface returns a reversible 410 Gone
+// instead of writing to db.Wallet. Mirrors the orderRoutes.js precedent. The mount in
+// routes/v1.js and export shape stay unchanged; the Wallet model is intentionally KEPT.
+// To restore, revert this file.
 const router = require('express').Router();
-const { authMiddleware, requireRole } = require('../middleware/authMiddleware');
-const { MONEY_ROLES } = require('../utils/financialControls');
-const { getWallet, creditWallet, debitWallet } = require('../controller/walletController');
 
-// War Room 3: crediting/debiting a wallet moves money — require a money role.
-// Reading the balance stays open to any authenticated org member (the controller
-// still enforces org ownership).
-const moneyMover = requireRole(...MONEY_ROLES);
+const gone = (_req, res) => res.status(410).json({
+    success: false,
+    error: {
+        code: 'GONE',
+        message: 'Wallets are owned by the Java wallet-service; route money flows there, not trade-service.',
+    },
+});
 
-router.get('/:orgId',         authMiddleware, getWallet);
-router.post('/:orgId/credit', authMiddleware, moneyMover, creditWallet);
-router.post('/:orgId/debit',  authMiddleware, moneyMover, debitWallet);
+// Express 5 / path-to-regexp 8 reject a bare '*' path; a path-less middleware matches all
+// methods + paths and is the correct Express 5 catch-all.
+router.use(gone);
 
 module.exports = router;

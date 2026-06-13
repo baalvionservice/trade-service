@@ -1,21 +1,23 @@
 'use strict';
+// RETIRED: escrow is now owned by the Java escrow-service (:13017, /api/v1/escrow).
+// trade-service must not hold a divergent escrow money state (data-split risk), so this
+// HTTP surface returns an explicit, reversible 410 Gone instead of writing to db.Escrow.
+// Mirrors the orderRoutes.js retirement precedent. The mount in routes/v1.js
+// (`router.use('/escrows', require('./escrowRoutes'))`) and the export shape stay
+// unchanged. The Escrow Sequelize model is intentionally KEPT (adminController stats +
+// internalController finance-events projection still read it). To restore, revert this file.
 const router = require('express').Router();
-const { authMiddleware, requireRole } = require('../middleware/authMiddleware');
-const { MONEY_ROLES } = require('../utils/financialControls');
-const {
-    listEscrows, getEscrow, createEscrow, fundEscrow, releaseEscrow, refundEscrow,
-} = require('../controller/escrowController');
 
-// War Room 3: only money roles (admin/owner/super_admin) may move escrowed funds.
-// Reads stay open to any authenticated tenant member (still tenant-scoped in the
-// controller). create/fund/release/refund all touch money and are role-gated.
-const moneyMover = requireRole(...MONEY_ROLES);
+const gone = (_req, res) => res.status(410).json({
+    success: false,
+    error: {
+        code: 'GONE',
+        message: 'Escrow is owned by the Java escrow-service; route money flows there, not trade-service.',
+    },
+});
 
-router.get('/',              authMiddleware, listEscrows);
-router.get('/:id',           authMiddleware, getEscrow);
-router.post('/',             authMiddleware, moneyMover, createEscrow);
-router.patch('/:id/fund',    authMiddleware, moneyMover, fundEscrow);
-router.patch('/:id/release', authMiddleware, moneyMover, releaseEscrow);
-router.patch('/:id/refund',  authMiddleware, moneyMover, refundEscrow);
+// Express 5 / path-to-regexp 8 reject a bare '*' path; a path-less middleware matches all
+// methods + paths and is the correct Express 5 catch-all.
+router.use(gone);
 
 module.exports = router;
