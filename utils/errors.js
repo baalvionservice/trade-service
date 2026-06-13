@@ -1,4 +1,3 @@
-'use strict';
 class AppError extends Error {
     constructor(code, message, statusCode = 400, details = {}) {
         super(message);
@@ -7,4 +6,5 @@ class AppError extends Error {
         this.details = details;
     }
 }
+
 module.exports = { AppError };

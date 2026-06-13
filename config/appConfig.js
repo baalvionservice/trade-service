@@ -87,6 +87,47 @@ module.exports = {
         // Fails fast in production if unset or uses a known dev placeholder.
         gatewaySigningSecret: requireSecret('GATEWAY_SIGNING_SECRET', 'dev_gateway_signing_secret', 'Gateway signing secret'),
     },
+    // Document Management System — production file engine (War Room 4, Prompt 4).
+    // Secure upload → S3-compatible storage → versioning → virus scan → encryption.
+    documents: {
+        // Object storage driver: 'local' (filesystem, dev default) | 's3' (AWS S3 /
+        // MinIO / R2 / any S3-compatible endpoint). The S3 SDK is lazy-required so the
+        // service boots without @aws-sdk installed when running the local driver.
+        storageProvider: (process.env.DOC_STORAGE_PROVIDER || 'local').toLowerCase(),
+        // Local driver root (dev). Files are written under <root>/<storage_key>.
+        localDir: process.env.DOC_STORAGE_LOCAL_DIR || require('path').join(__dirname, '..', '.storage', 'documents'),
+        // S3-compatible driver settings.
+        s3: {
+            bucket: process.env.DOC_S3_BUCKET || 'baalvion-trade-documents',
+            region: process.env.DOC_S3_REGION || process.env.AWS_REGION || 'us-east-1',
+            // Custom endpoint for MinIO / Cloudflare R2 / DigitalOcean Spaces. Empty = real AWS.
+            endpoint: process.env.DOC_S3_ENDPOINT || undefined,
+            forcePathStyle: process.env.DOC_S3_FORCE_PATH_STYLE === 'true', // MinIO needs this
+            accessKeyId: process.env.DOC_S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.DOC_S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY,
+            // Server-side-encryption header for objects at rest (e.g. 'AES256' or 'aws:kms').
+            // Independent of the app-level envelope encryption below.
+            serverSideEncryption: process.env.DOC_S3_SSE || undefined,
+            kmsKeyId: process.env.DOC_S3_KMS_KEY_ID || undefined,
+        },
+        // App-level envelope encryption (AES-256-GCM). 32-byte master key, base64.
+        // When set, every stored object is encrypted before it touches the storage
+        // backend and downloads stream back through the app (presigned URLs are only
+        // issued for unencrypted objects). Generate: `openssl rand -base64 32`.
+        encryptionKey: process.env.DOCUMENT_ENCRYPTION_KEY || null,
+        // Reject uploads larger than this (bytes). Default 25 MiB.
+        maxUploadBytes: Number(process.env.DOC_MAX_UPLOAD_BYTES || 25 * 1024 * 1024),
+        // Presigned download-URL lifetime (seconds).
+        signedUrlTtlSeconds: Number(process.env.DOC_SIGNED_URL_TTL || 300),
+        // Virus-scan engine: 'clamav' (real, lazy) | 'none' (placeholder hook). The
+        // placeholder still rejects EICAR test files so the gate is demonstrably live.
+        virusScanProvider: (process.env.DOC_VIRUS_SCAN_PROVIDER || 'none').toLowerCase(),
+        clamav: {
+            host: process.env.CLAMAV_HOST || '127.0.0.1',
+            port: Number(process.env.CLAMAV_PORT || 3310),
+            timeoutMs: Number(process.env.CLAMAV_TIMEOUT_MS || 15000),
+        },
+    },
     // financial-services-java integration (money/KYC/risk system of record).
     finance: {
         // Shared HMAC-SHA256 secret for the Java→Node finance-events webhook. MUST match the

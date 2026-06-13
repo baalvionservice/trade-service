@@ -12,11 +12,12 @@ const SEARCH_KEYS = ['search', 'q', 'query'];
 // Caller's tenant (from the token when present; demo tenant otherwise).
 const tenantOf = (req) => (req.auth && req.auth.tenantId) || 'T-DEMO';
 
-// Tenant-isolation bypass — identical to middleware/tenantContext.js for typed resources, so the
-// generic store behaves consistently with the rest of the platform (admins/owners see all tenants;
-// regular members are confined to their own). Without this, the store was the lone resource that
-// ignored the bypass, hiding seeded data from privileged callers.
-const BYPASS_ROLES = new Set(['admin', 'owner', 'super_admin']);
+// Tenant-isolation bypass (C4): ONLY platform operators may see across tenants. Mirrors
+// @baalvion/tenancy PLATFORM_BYPASS_ROLES; kept as a local literal because trade-service does not
+// depend on the tenancy package. Organization roles (admin/owner/super_admin) are tenant-scoped
+// and must NEVER bypass tenant isolation — a per-org admin seeing every tenant's documents was the
+// exact cross-tenant exposure this remediation closes.
+const BYPASS_ROLES = new Set(['platform_admin', 'platform_security_admin']);
 const canBypass = (req) =>
     !!(req.auth && Array.isArray(req.auth.roles) && req.auth.roles.some((r) => BYPASS_ROLES.has(r)));
 // True when `row` is visible to the caller (their tenant, or any tenant if they bypass).
@@ -35,7 +36,7 @@ const listDocs = async (req, res, next) => {
     try {
         const collection = req.params.collection;
         const where = { collection };
-        if (!canBypass(req)) where.tenantId = tenantOf(req); // tenant isolation (admins/owners see all)
+        if (!canBypass(req)) where.tenantId = tenantOf(req); // tenant isolation (only platform operators see all)
         const rows = await db.Collection.findAll({
             where,
             order: [['createdAt', 'DESC']],

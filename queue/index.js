@@ -10,6 +10,10 @@ const connection = require('./connection');
 const QUEUE_NAMES = [
     'notifications', 'email', 'sms', 'audit', 'analytics', 'fx_refresh',
     'ocr', 'ai', 'shipment_sync', 'webhook_delivery', 'ws_fanout',
+    'workflow_webhook', // shipment workflow state-machine transition fan-out
+    'document_scan',    // document-engine virus scan → release/quarantine (Prompt 4)
+    'customs_submission', // customs gateway filing pipeline → ICEGATE/ACE/CDS/Mirsal (Prompt 9)
+    'dispatch_webhook',   // dispatch orchestration lifecycle webhook fan-out (Prompt 11)
 ];
 const DLQ = 'dead-letter';
 

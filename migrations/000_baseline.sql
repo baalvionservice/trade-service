@@ -2,6 +2,9 @@
 -- PostgreSQL database dump
 --
 
+-- NOTE: the pg_dump \restrict / \unrestrict psql meta-commands were removed —
+-- they are psql-client directives, not SQL, and crash the migrate.js runner
+-- (sequelize.query) on a clean rebuild. Removing them is schema-neutral.
 
 -- Dumped from database version 15.18
 -- Dumped by pg_dump version 15.18
@@ -1546,5 +1549,5 @@ ALTER TABLE ONLY trade.wallets
 --
 -- PostgreSQL database dump complete
 --
-
+-- (\unrestrict psql meta-command removed — see note at top of file.)
 

@@ -4,20 +4,15 @@ const config = require('../config/appConfig');
 const { sendSuccess, sendPaginated } = require('../utils/response');
 const { AppError } = require('../utils/errors');
 const { initiatePayment, refFromInitiate } = require('../lib/financeClient');
+const { recordAudit } = require('../utils/audit');
+const { hasPlatformBypass, callerTenantId, actorId } = require('../utils/financialControls');
 
-function isAdmin(req) {
-    const roles = (req.auth && req.auth.roles) || [];
-    return roles.some((r) => r === 'admin' || r === 'super_admin' || r === 'owner');
-}
-
-function callerTenantId(req) {
-    return (req.auth && (req.auth.tenantId || req.auth.orgId)) || null;
-}
-
+// War Room 3: tenant bypass is reserved for PLATFORM operators only. An org
+// admin/owner is tenant-scoped on payment records.
 async function fetchPaymentOwned(id, req, next) {
     const payment = await db.Payment.findByPk(id);
     if (!payment) { next(new AppError('NOT_FOUND', 'Payment not found', 404)); return null; }
-    if (isAdmin(req)) return payment;
+    if (hasPlatformBypass(req)) return payment;
     const tenantId = callerTenantId(req);
     if (tenantId && payment.tenant_id && payment.tenant_id !== tenantId) {
         next(new AppError('NOT_FOUND', 'Payment not found', 404)); return null;
@@ -33,7 +28,7 @@ const listPayments = async (req, res, next) => {
         if (status) where.status = status;
         if (payer_org_id) where.payer_org_id = payer_org_id;
         if (payee_org_id) where.payee_org_id = payee_org_id;
-        if (!isAdmin(req)) {
+        if (!hasPlatformBypass(req)) {
             const tenantId = callerTenantId(req);
             if (tenantId) where.tenant_id = tenantId;
         }
@@ -95,9 +90,22 @@ const createPayment = async (req, res, next) => {
             } catch (e) {
                 // Money must be real when enabled — surface the failure (no 500), keep the pending row for audit/retry.
                 await payment.update({ metadata: { ...(payment.metadata || {}), financeError: e.message, financeStatus: 'initiate_failed' } });
+                await recordAudit({
+                    actorId: actorId(req), action: 'payment.create.failed', resourceType: 'payment', resourceId: payment.id,
+                    tenantId: tenantId || payment.tenant_id,
+                    metadata: { amount: payment.amount, currency: payment.currency, error: e.message },
+                });
                 return next(new AppError('FINANCE_UNAVAILABLE', `payment engine error: ${e.message}`, e.status && e.status < 500 ? 400 : 502));
             }
         }
+        await recordAudit({
+            actorId: actorId(req), action: 'payment.create', resourceType: 'payment', resourceId: payment.id,
+            tenantId: tenantId || payment.tenant_id,
+            metadata: {
+                amount: payment.amount, currency: payment.currency, status: payment.status,
+                payer_org_id: payment.payer_org_id, payee_org_id: payment.payee_org_id, order_id: payment.order_id,
+            },
+        });
         return sendSuccess(req, res, payment, 201);
     } catch (err) {
         return next(err);
@@ -110,10 +118,16 @@ const updatePaymentStatus = async (req, res, next) => {
         if (!payment) return undefined;
         const { status, settled_at } = req.body;
         if (!status) return next(new AppError('BAD_REQUEST', 'status is required', 400));
+        const before = payment.status;
         const updates = { status };
         if (status === 'completed' && !settled_at) updates.settled_at = new Date();
         if (settled_at) updates.settled_at = settled_at;
         await payment.update(updates);
+        await recordAudit({
+            actorId: actorId(req), action: 'payment.status.update', resourceType: 'payment', resourceId: payment.id,
+            tenantId: payment.tenant_id,
+            metadata: { amount: payment.amount, currency: payment.currency, before, after: status },
+        });
         return sendSuccess(req, res, payment);
     } catch (err) {
         return next(err);

@@ -10,6 +10,22 @@ const resolveOrg = (idOrCode) =>
         ? db.Organization.findByPk(idOrCode)
         : db.Organization.findOne({ where: { code: String(idOrCode) } }));
 
+// Profile fields a non-platform admin may set. Identity (id/tenant_id/code) and compliance
+// fields (kyc_status/risk_score/status) are deliberately excluded — they are assigned
+// server-side or via the platform-only KYC endpoint, never via client-supplied body.
+const ORG_CREATABLE_FIELDS = ['tenant_id', 'code', 'name', 'type', 'country', 'registration_number', 'contact_email'];
+const ORG_UPDATABLE_FIELDS = ['name', 'type', 'country', 'registration_number', 'contact_email'];
+
+// Returns a NEW object containing only the allowlisted keys present on the source.
+const pick = (obj, fields) =>
+    fields.reduce((acc, f) => (obj && obj[f] !== undefined ? { ...acc, [f]: obj[f] } : acc), {});
+
+const isPlatformAdmin = (req) => req.auth && req.auth.role === 'super_admin';
+
+// True when the caller's tenant owns this org. Platform super_admin owns all.
+const ownsOrg = (req, org) =>
+    isPlatformAdmin(req) || String(org.tenant_id) === String(req.auth && req.auth.tenantId);
+
 const listOrgs = async (req, res, next) => {
     try {
         const { type, country, status, search, page = 1, limit = 20 } = req.query;
@@ -40,7 +56,11 @@ const getOrg = async (req, res, next) => {
 
 const createOrg = async (req, res, next) => {
     try {
-        const org = await db.Organization.create(req.body);
+        const data = pick(req.body, ORG_CREATABLE_FIELDS);
+        // Non-platform admins may only create orgs within their own tenant; never trust a
+        // client-supplied tenant_id from them.
+        if (!isPlatformAdmin(req)) data.tenant_id = req.auth.tenantId;
+        const org = await db.Organization.create(data);
         return sendSuccess(req, res, org, 201);
     } catch (err) {
         return next(err);
@@ -51,7 +71,10 @@ const updateOrg = async (req, res, next) => {
     try {
         const org = await resolveOrg(req.params.id);
         if (!org) return next(new AppError('NOT_FOUND', 'Organization not found', 404));
-        await org.update(req.body);
+        if (!ownsOrg(req, org)) {
+            return next(new AppError('FORBIDDEN', 'Organization belongs to another tenant', 403));
+        }
+        await org.update(pick(req.body, ORG_UPDATABLE_FIELDS));
         return sendSuccess(req, res, org);
     } catch (err) {
         return next(err);
