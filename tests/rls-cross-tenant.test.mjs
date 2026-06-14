@@ -1,8 +1,14 @@
 // R1 (GO/NO-GO) cross-tenant isolation probe — runs against a real Postgres.
 //
 // Connects as the NON-SUPERUSER baalvion_app role (the only role for which RLS is
-// enforced) and asserts the fail-closed tenant_isolation policy from migration
-// 007 actually isolates tenants. This is the regression gate for R1.
+// enforced) and asserts the fail-closed tenant_isolation policy actually isolates
+// tenants. This is the regression gate for R1.
+//
+// Migration 008 (CR-8) hardened the policy so app.tenant_bypass is honoured ONLY for
+// roles that are NOT the runtime baalvion_app role. Because this probe connects AS
+// baalvion_app it can no longer seed via the bypass escape hatch — it seeds each
+// tenant's row under that tenant's own app.current_tenant context (the tenant-match
+// branch) and asserts the bypass is neutralised for the app role.
 //
 // Run:  DB_HOST=127.0.0.1 node --test tests/rls-cross-tenant.test.mjs
 // Env:  DB_HOST(127.0.0.1) DB_PORT(5432) DB_NAME(baalvion_db)
@@ -35,6 +41,29 @@ const setCtx = (c, tenant, bypass) =>
 const countProbe = async (c) =>
   Number((await c.query("SELECT count(*)::int AS n FROM trade.orders WHERE tenant_id LIKE 'rls-probe-%'")).rows[0].n);
 
+// Migration 008 disabled app.tenant_bypass for baalvion_app, so seed/cleanup run under
+// each tenant's own app.current_tenant context instead of the (now neutralised) bypass.
+const cleanupTenant = async (c, tenant) => {
+  await setCtx(c, tenant, 'off');
+  await c.query("DELETE FROM trade.orders WHERE tenant_id = $1", [tenant]);
+};
+const seedTenant = async (c, tenant) => {
+  await setCtx(c, tenant, 'off');
+  await c.query(
+    "INSERT INTO trade.orders (tenant_id,status,created_at,updated_at) VALUES ($1,'pending',now(),now())",
+    [tenant]);
+};
+const seedBoth = async (c) => {
+  await cleanupTenant(c, A);
+  await cleanupTenant(c, B);
+  await seedTenant(c, A);
+  await seedTenant(c, B);
+};
+const cleanupBoth = async (c) => {
+  await cleanupTenant(c, A);
+  await cleanupTenant(c, B);
+};
+
 test('R1 cross-tenant RLS isolation (as baalvion_app)', async (t) => {
   await withClient(async (c) => {
     // sanity: the runtime role must be a non-superuser without bypassrls.
@@ -43,12 +72,15 @@ test('R1 cross-tenant RLS isolation (as baalvion_app)', async (t) => {
     assert.equal(role.rolsuper, false, 'runtime role must NOT be superuser');
     assert.equal(role.rolbypassrls, false, 'runtime role must NOT bypass RLS');
 
-    // seed two tenants via bypass.
-    await setCtx(c, '', 'on');
-    await c.query("DELETE FROM trade.orders WHERE tenant_id LIKE 'rls-probe-%'");
-    await c.query(
-      "INSERT INTO trade.orders (tenant_id,status,created_at,updated_at) VALUES ($1,'pending',now(),now()),($2,'pending',now(),now())",
-      [A, B]);
+    // seed two tenants under their own tenant context (008: app role cannot bypass).
+    await seedBoth(c);
+
+    // seed sanity: each tenant must actually see exactly its own seeded row, so a
+    // silently-rejected seed fails loudly here instead of making fail-closed pass vacuously.
+    await setCtx(c, A, 'off');
+    assert.equal(await countProbe(c), 1, 'seed check: tenant A sees exactly its own row');
+    await setCtx(c, B, 'off');
+    assert.equal(await countProbe(c), 1, 'seed check: tenant B sees exactly its own row');
 
     await t.test('fail-closed: no tenant set -> 0 rows', async () => {
       await setCtx(c, '', 'off');
@@ -75,14 +107,14 @@ test('R1 cross-tenant RLS isolation (as baalvion_app)', async (t) => {
       );
     });
 
-    await t.test('bypass=on sees both tenants', async () => {
+    await t.test('app role cannot bypass isolation (008 CR-8 hardening)', async () => {
+      // baalvion_app flipping app.tenant_bypass on must NOT defeat isolation.
       await setCtx(c, '', 'on');
-      assert.equal(await countProbe(c), 2);
+      assert.equal(await countProbe(c), 0, 'baalvion_app must NOT bypass RLS even with app.tenant_bypass=on');
     });
 
     // cleanup.
-    await setCtx(c, '', 'on');
-    await c.query("DELETE FROM trade.orders WHERE tenant_id LIKE 'rls-probe-%'");
+    await cleanupBoth(c);
   });
 });
 
@@ -93,12 +125,8 @@ test('R1 cross-tenant RLS isolation (as baalvion_app)', async (t) => {
 // release so the recycled pooled connection is fail-closed for the next request.
 test('R1 read-path: non-transactional read is tenant-scoped + reset is leak-proof', async (t) => {
   await withClient(async (c) => {
-    // seed two tenants via bypass.
-    await setCtx(c, '', 'on');
-    await c.query("DELETE FROM trade.orders WHERE tenant_id LIKE 'rls-probe-%'");
-    await c.query(
-      "INSERT INTO trade.orders (tenant_id,status,created_at,updated_at) VALUES ($1,'pending',now(),now()),($2,'pending',now(),now())",
-      [A, B]);
+    // seed two tenants under their own tenant context (008: app role cannot bypass).
+    await seedBoth(c);
 
     await t.test('stamped connection: non-transactional read sees only own tenant', async () => {
       // exactly what tenantConnection middleware does at request start, then a
@@ -124,7 +152,6 @@ test('R1 read-path: non-transactional read is tenant-scoped + reset is leak-proo
     });
 
     // cleanup.
-    await setCtx(c, '', 'on');
-    await c.query("DELETE FROM trade.orders WHERE tenant_id LIKE 'rls-probe-%'");
+    await cleanupBoth(c);
   });
 });
